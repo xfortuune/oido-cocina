@@ -6,6 +6,7 @@ import { HudScene } from './scenes/HudScene';
 import { KitchenScene } from './scenes/KitchenScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { MenuScene } from './scenes/MenuScene';
+import { PerkScene } from './scenes/PerkScene';
 import { SummaryScene } from './scenes/SummaryScene';
 
 async function start(): Promise<void> {
@@ -27,7 +28,7 @@ async function start(): Promise<void> {
     // Los avatares vienen de cdn.discordapp.com: hace falta CORS para usarlos como textura.
     loader: { crossOrigin: 'anonymous' },
     // El orden importa: el HUD se dibuja encima de la cocina.
-    scene: [MenuScene, LobbyScene, KitchenScene, HudScene, SummaryScene],
+    scene: [MenuScene, LobbyScene, KitchenScene, HudScene, SummaryScene, PerkScene],
   });
   // Solo en desarrollo: acceso desde la consola para depurar.
   if (import.meta.env.DEV) Object.assign(window, { horaPunta: game, horaPuntaNet: net });

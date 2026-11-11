@@ -5,8 +5,8 @@
 //   'interact' InputMessage (la posición en el momento de pulsar)
 //   'claim'    Role: quedarse un puesto en el vestíbulo
 //   'start'    empezar el turno (cualquiera, si todos los puestos están cubiertos)
-//   'lobby'    volver al vestíbulo desde el resumen
-//   'nivel'    number: elegir nivel (en el vestíbulo o el resumen; solo los ya desbloqueados)
+//   'lobby'    volver al vestíbulo desde el resumen (o elegir habilidades, si toca)
+//   'perk'     PerkId: elegir una de las tres habilidades ofrecidas
 //   'modo'     number: cambiar cuántos jugadores se esperan (2-4, en el vestíbulo)
 //
 // Servidor → cliente:
@@ -27,7 +27,7 @@ export interface JoinOptions {
   name: string;
   /** Duración de la ronda en segundos (solo para pruebas). */
   turno?: number;
-  /** Nivel más alto que este jugador ya tiene desbloqueado (guardado en su navegador). */
+  /** Nivel con el que empieza la sala (solo para pruebas). */
   nivel?: number;
   /** Token de Discord: el servidor lo usa para saber quién eres (nombre y avatar verificados). */
   accessToken?: string;
@@ -62,7 +62,7 @@ export interface InputMessage {
   moving: boolean;
 }
 
-export type RoomPhase = 'lobby' | 'playing' | 'summary';
+export type RoomPhase = 'lobby' | 'playing' | 'summary' | 'perks';
 
 export interface LobbyMember {
   id: string;
@@ -71,6 +71,10 @@ export interface LobbyMember {
   roles: Role[];
   /** URL del avatar de Discord (null fuera de Discord o sin avatar). */
   avatar: string | null;
+  /** Mini-habilidades conseguidas en esta partida. */
+  perks: string[];
+  /** Habilidades entre las que está eligiendo ahora (null si no le toca o ya ha elegido). */
+  offer: string[] | null;
 }
 
 export interface RoomInfo {
@@ -79,10 +83,8 @@ export interface RoomInfo {
   /** Jugadores que se esperan para empezar (1-4). */
   modo: number;
   members: LobbyMember[];
-  /** Nivel que se va a jugar. */
+  /** Nivel que se va a jugar. Al perder una ronda se vuelve al 1. */
   nivel: number;
-  /** Nivel más alto desbloqueado en esta sala. */
-  desbloqueado: number;
 }
 
 export interface SummaryPlayer extends LobbyMember {
@@ -103,6 +105,8 @@ export interface SummaryInfo {
   passed: boolean;
   /** 0-3 (0 si no se ha pasado). */
   stars: number;
-  /** Nivel más alto desbloqueado tras esta ronda. */
-  unlocked: number;
+  /** Se han superado los 20 niveles. */
+  won: boolean;
+  /** Toca elegir habilidad al continuar. */
+  perkNext: boolean;
 }

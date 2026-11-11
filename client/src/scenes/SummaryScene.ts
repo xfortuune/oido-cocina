@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { getRecipe, MAX_LEVEL, newRecipesAt, type RoomInfo } from '@hora-punta/shared';
-import { net } from '../net';
+import { net, savedRecord } from '../net';
 import { CHEF_COLORS, chefKey } from '../pixel/sprites';
 import { clamp, COLORS, drawBackground, pixelPanel, txt } from '../theme';
 import { addAvatar } from '../ui/avatars';
@@ -15,6 +15,7 @@ export class SummaryScene extends Phaser.Scene {
   create(): void {
     const onRoom = (info: RoomInfo) => {
       if (info.phase === 'lobby') this.scene.start('lobby');
+      else if (info.phase === 'perks') this.scene.start('perks');
       else if (info.phase === 'playing') this.scene.start('kitchen');
     };
     const onLeft = () => this.scene.start('lobby');
@@ -35,12 +36,12 @@ export class SummaryScene extends Phaser.Scene {
     const { width: W, height: H } = this.scale;
     drawBackground(this);
     if (!summary) return;
-    const { stats, money, reputation, endReason, players, mvpId, level, goal, passed, stars } = summary;
+    const { stats, money, reputation, endReason, players, mvpId, level, goal, passed, stars, won, perkNext } = summary;
     const s = clamp(Math.min(W / 480, H / 760), 0.7, 1.3);
 
     const title = passed
-      ? level >= MAX_LEVEL
-        ? '¡Nivel 20 superado!'
+      ? won
+        ? `¡Los ${MAX_LEVEL} niveles superados!`
         : `¡Nivel ${level} superado!`
       : endReason === 'reputation'
         ? '¡Reputación por los suelos!'
@@ -55,10 +56,15 @@ export class SummaryScene extends Phaser.Scene {
     }).setOrigin(0.5, 0);
     y += titleText.height + 4;
     const goalLine = passed
-      ? `Servidos ${stats.served} de ${goal}`
-      : `Servidos ${stats.served} de ${goal}: ¡a por ello otra vez!`;
-    txt(this, W / 2, y, goalLine, 16 * s, { color: '#fff4dc' }).setOrigin(0.5, 0);
-    y += 24 * s;
+      ? `Servidos ${stats.served} de ${goal}${won ? '\n¡Sois leyenda de Mordiscos Mandarina!' : ''}`
+      : `Servidos ${stats.served} de ${goal}. Fin de la partida:\nvolvéis al nivel 1 sin habilidades.`;
+    const gl = txt(this, W / 2, y, goalLine, 16 * s, { color: passed ? '#fff4dc' : '#ffc93c', align: 'center' }).setOrigin(0.5, 0);
+    y += gl.height + 4;
+    if (!passed || won) {
+      const rl = txt(this, W / 2, y, `Récord: nivel ${savedRecord()} superado`, 14 * s, { color: '#fff4dcaa' }).setOrigin(0.5, 0);
+      y += rl.height + 4;
+    }
+    y += 4 * s;
     const starPx = Math.round(4 * s);
     for (let i = 0; i < 3; i++) {
       this.add
@@ -131,13 +137,12 @@ export class SummaryScene extends Phaser.Scene {
       y += fs * 1.8;
     }
 
-    // Siguiente nivel (si se ha pasado), repetir, y salir.
+    // Seguir (siguiente nivel, elegir habilidad o partida nueva) y salir.
     const buttons: { label: string; color: number; onPress: () => void }[] = [];
-    if (next) buttons.push({ label: `Nivel ${next}`, color: COLORS.green, onPress: () => net.backToLobby(next) });
     buttons.push({
-      label: passed ? 'Repetir' : 'Reintentar',
-      color: passed ? COLORS.blue : COLORS.green,
-      onPress: () => net.backToLobby(level),
+      label: perkNext ? 'Elegir habilidad' : next ? `Nivel ${next}` : 'Nueva partida',
+      color: COLORS.green,
+      onPress: () => net.backToLobby(),
     });
     buttons.push({
       label: 'Salir',
@@ -160,7 +165,8 @@ export class SummaryScene extends Phaser.Scene {
       });
     });
     if (net.info?.modo !== 1) {
-      txt(this, W / 2, by + 34 * s, 'Volveréis a la sala para empezar juntos', 12 * s, { color: '#fff4dc99' }).setOrigin(0.5, 0);
+      const note = perkNext ? 'Cada uno elige la suya; luego, a la sala' : 'Volveréis a la sala para empezar juntos';
+      txt(this, W / 2, by + 34 * s, note, 12 * s, { color: '#fff4dc99' }).setOrigin(0.5, 0);
     }
   }
 }

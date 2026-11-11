@@ -28,6 +28,7 @@ Arranca dos cosas a la vez:
 Desde el móvil, usa la dirección «Network» que muestra Vite (por ejemplo `http://192.168.1.50:5173/?sala=amigos`).
 
 **Turno corto para pruebas:** añade `&turno=20` (20 segundos). Lo decide quien crea la sala.
+Los bots también pueden empezar en otro nivel con la opción `nivel` (solo para pruebas).
 
 **Prueba automática con bots** (con `npm run dev` en marcha, en otra terminal):
 
@@ -35,7 +36,7 @@ Desde el móvil, usa la dirección «Network» que muestra Vite (por ejemplo `ht
 node scripts/prueba-bots.mjs
 ```
 
-Dos bots entran en una sala, se reparten los puestos, cocinan, toman nota, se pasan cosas y terminan un turno; el script marca cada paso con ✅ o ❌.
+Dos bots entran en una sala, se reparten los puestos, cocinan, toman nota, se pasan cosas y terminan un turno; luego un bot solo cocina dos hamburguesas, supera un nivel, elige habilidad y pierde la siguiente ronda (tarda unos 2 minutos); el script marca cada paso con ✅ o ❌.
 
 ## Jugar en Discord (Actividad)
 
@@ -207,8 +208,9 @@ Quien entra a mitad de turno ayuda sin puesto hasta el siguiente; si alguien se 
 
 ### Niveles
 
-Hay **20 niveles**. Cada ronda tiene un **objetivo de pedidos servidos**: si lo cumplís (sin quedaros sin
-reputación) pasáis al siguiente; si no, se repite. Las estrellas (1-3) dependen de cuánto superéis el objetivo.
+Una partida es una escalada de **20 niveles**. Cada ronda tiene un **objetivo de pedidos servidos**: si lo cumplís
+(sin quedaros sin reputación) pasáis al siguiente. **Si no, se acaba la partida**: volvéis al nivel 1 sin habilidades.
+Las estrellas (1-3) dependen de cuánto superéis el objetivo. Cada navegador guarda su récord.
 
 | | Nivel 1 | Nivel 10 | Nivel 20 |
 |---|---|---|---|
@@ -221,9 +223,28 @@ reputación) pasáis al siguiente; si no, se repite. Las estrellas (1-3) depende
   La Huertana aparece en el nivel 3; en los dos primeros solo se pide La Chispa.
 - **Según cuántos sois**: con más cocineros llegan más clientes (×1,4 con 2, ×1,75 con 3, ×2 con 4) y el objetivo
   es mayor; jugando solo los clientes tienen un 15 % más de paciencia.
-- El progreso se guarda en tu navegador. Una sala puede jugar hasta el nivel más alto que tenga desbloqueado
-  cualquiera de los que entran, y en la sala se puede elegir cualquier nivel ya desbloqueado (◀ ▶).
 - Todos los números están en `shared/src/levels.ts`, para ajustarlos fácilmente.
+
+### Mini-habilidades
+
+Cada **2 niveles superados** (tras el 2, el 4, el 6…), **cada cocinero elige una habilidad entre tres**, con
+preferencia por las que sirven para sus puestos. Le acompañan el resto de la partida; al perder una ronda se pierden todas.
+Si alguien sale de la sala y vuelve a entrar desde Discord, recupera las suyas.
+
+| Habilidad | Efecto | Máx. |
+|---|---|---|
+| Zapatillas rápidas | Te mueves un 12 % más rápido | ×2 |
+| Vuelta y vuelta | La carne que pones se hace un 25 % antes | ×2 |
+| Termómetro | Lo que pones en plancha o freidora tarda un 60 % más en quemarse | ×2 |
+| Aceite nuevo | Tus patatas se fríen un 25 % antes | ×2 |
+| Grifo a presión | Tus vasos se llenan un 35 % antes | ×2 |
+| Labia | Los clientes a los que tomas nota tienen un 20 % más de paciencia (no sale jugando solo) | ×2 |
+| Simpatía | Cada parte que entregas devuelve al cliente un 12 % de paciencia | ×2 |
+| Bandeja | Con comida en las manos, coger de una caja de ingredientes lo apila encima | ×1 |
+| Disculpa a tiempo | Tu primer fallo de cada ronda no cuesta reputación ni dinero | ×2 |
+| Clientela fiel | El equipo empieza cada ronda con 10 de reputación más | ×2 |
+
+Están definidas en `shared/src/perks.ts`.
 
 ### Pedidos
 
@@ -278,4 +299,5 @@ Variables de entorno: ver `.env.example` (`VITE_DISCORD_CLIENT_ID`, `DISCORD_CLI
 2. ✅ Multijugador con Colyseus: sala, puestos por jugador, tomar nota, pasarse cosas, resumen con MVP
 3. ✅ Actividad de Discord: login, nombre y avatar, una partida por canal de voz, guía de portal, túnel y despliegue
 4. ⏳ ✅ 20 niveles con dificultad creciente según el número de jugadores y 6 recetas (tomate y bacon).
+   ✅ Mini-habilidades cada 2 niveles; perder una ronda devuelve al nivel 1.
    Pendiente: tienda de mejoras, eventos aleatorios, stock de ingredientes, sonido y pulido visual

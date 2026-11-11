@@ -6,6 +6,9 @@ import {
   levelParams,
   levelStars,
   MAX_LEVEL,
+  perkCount,
+  PERK_EVERY,
+  rollPerkOffer,
   ROLE_PRESETS,
   MAX_PLAYERS,
   mvpScore,
@@ -42,8 +45,11 @@ export class KitchenRoom extends Room {
   private modo = 2;
   /** Duración forzada de la ronda (solo para pruebas). */
   private turnDuration = 0;
+  /** Nivel de la partida en curso: al perder una ronda se vuelve al 1. */
   private nivel = 1;
-  private desbloqueado = 1;
+  /** Habilidades de la partida por jugador (id de Discord, o de sesión en el navegador), por si sale y vuelve a entrar. */
+  private runPerks = new Map<string, string[]>();
+  private memberKeys = new Map<string, string>();
   private members = new Map<string, LobbyMember>();
   private sim: KitchenSim | null = null;
   private summary: SummaryInfo | null = null;
@@ -54,6 +60,7 @@ export class KitchenRoom extends Room {
     this.modo = clampModo(options.modo);
     const turno = Number(options.turno);
     if (turno > 0) this.turnDuration = Math.max(10, Math.min(300, turno));
+    if (options.nivel) this.nivel = clampLevel(options.nivel);
 
     this.onMessage('input', (client, msg: InputMessage) => this.applyInput(client.sessionId, msg));
     this.onMessage('interact', (client, msg: InputMessage) => {
@@ -85,18 +92,15 @@ export class KitchenRoom extends Room {
       this.broadcastRoom();
     });
     this.onMessage('start', () => this.startTurn());
-    this.onMessage('nivel', (_client, n: number) => {
-      if (this.phase === 'playing') return;
-      this.nivel = clampLevel(n, this.desbloqueado);
-      this.broadcastRoom();
-    });
-    this.onMessage('lobby', (_client, n?: number) => {
+    this.onMessage('lobby', () => {
       if (this.phase !== 'summary') return;
-      if (n !== undefined && n !== null) this.nivel = clampLevel(n, this.desbloqueado);
-      this.phase = 'lobby';
+      const perkNext = this.summary?.perkNext;
       this.summary = null;
+      if (perkNext) this.offerPerks();
+      else this.phase = 'lobby';
       this.broadcastRoom();
     });
+    this.onMessage('perk', (client, id: string) => this.pickPerk(client.sessionId, String(id)));
 
     this.setSimulationInterval((dt) => this.tick(dt), TICK_MS);
   }
@@ -123,18 +127,24 @@ export class KitchenRoom extends Room {
     const color = [0, 1, 2, 3].find((c) => !used.has(c)) ?? 0;
     const user = discordUser(client);
     const name = user?.name ?? (String(options.name ?? '').trim().slice(0, 20) || `Cocinero ${color + 1}`);
-    const member: LobbyMember = { id: client.sessionId, name, color, roles: [], avatar: user?.avatar ?? null };
+    const key = user?.id ?? client.sessionId;
+    this.memberKeys.set(client.sessionId, key);
+    const perks = this.runPerks.get(key) ?? [];
+    this.runPerks.set(key, perks);
+    const member: LobbyMember = {
+      id: client.sessionId,
+      name,
+      color,
+      roles: [],
+      avatar: user?.avatar ?? null,
+      perks,
+      offer: null,
+    };
     this.members.set(client.sessionId, member);
-    // La sala puede jugar hasta el nivel más alto que tenga desbloqueado cualquiera de los que entran.
-    const theirs = clampLevel(options.nivel);
-    if (theirs > this.desbloqueado) {
-      this.desbloqueado = theirs;
-      if (this.phase === 'lobby' && this.members.size === 1) this.nivel = theirs;
-    }
     if (this.phase !== 'playing') this.assignRoles();
 
     // Quien entra a mitad de turno ayuda llevando cosas hasta el siguiente turno.
-    this.sim?.addPlayer(member.id, member.name, member.color, member.roles);
+    this.sim?.addPlayer(member.id, member.name, member.color, member.roles, member.perks);
     this.broadcastRoom();
     if (this.summary) client.send('summary', this.summary);
   }
@@ -149,6 +159,12 @@ export class KitchenRoom extends Room {
     this.members.delete(client.sessionId);
     this.sim?.removePlayer(client.sessionId);
     this.lastInput.delete(client.sessionId);
+    this.memberKeys.delete(client.sessionId);
+    if (this.phase === 'perks') {
+      this.checkPerksDone();
+      this.broadcastRoom();
+      return;
+    }
     if (this.phase !== 'playing') {
       this.assignRoles();
       this.broadcastRoom();
@@ -199,7 +215,10 @@ export class KitchenRoom extends Room {
     sim.moveOnTick = false;
     sim.needsCaja = this.modo > 1;
     if (this.turnDuration) sim.turnDuration = this.turnDuration;
-    for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles);
+    for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles, m.perks);
+    // Clientela fiel: más reputación al empezar.
+    const fans = [...this.members.values()].reduce((n, m) => n + perkCount(m.perks, 'clientela'), 0);
+    sim.reputation += 10 * fans;
     this.sim = sim;
     this.summary = null;
     this.phase = 'playing';
@@ -225,32 +244,71 @@ export class KitchenRoom extends Room {
   }
 
   private finishTurn(sim: KitchenSim): void {
-    const players = [...this.members.values()].map((m) => {
-      const stats = sim.playerStats[m.id] ?? { taken: 0, delivered: 0, cooked: 0, assembled: 0, mistakes: 0 };
-      return { ...m, stats, score: mvpScore(stats) };
-    });
-    const best = [...players].sort((a, b) => b.score - a.score)[0];
     const passed = sim.endReason !== 'reputation' && sim.stats.served >= sim.goal;
-    if (passed && sim.level === this.desbloqueado && this.desbloqueado < MAX_LEVEL) this.desbloqueado++;
-    // Si se pasa, por defecto se juega el siguiente; si no, se repite.
-    if (passed) this.nivel = Math.min(this.desbloqueado, sim.level + 1);
+    const won = passed && sim.level >= MAX_LEVEL;
+    const perkNext = passed && !won && sim.level % PERK_EVERY === 0;
+    // El resumen muestra las habilidades que se tenían en esta ronda.
+    const summaryPlayers = [...this.members.values()].map((m) => {
+      const stats = sim.playerStats[m.id] ?? { taken: 0, delivered: 0, cooked: 0, assembled: 0, mistakes: 0 };
+      return { ...m, perks: [...m.perks], stats, score: mvpScore(stats) };
+    });
+    const best = [...summaryPlayers].sort((a, b) => b.score - a.score)[0];
+    if (passed && !won) this.nivel = sim.level + 1;
+    else this.resetRun();
     this.summary = {
       stats: sim.stats,
       money: sim.money,
       reputation: Math.max(0, sim.reputation),
       endReason: sim.endReason ?? 'time',
-      players,
+      players: summaryPlayers,
       mvpId: best?.id ?? null,
       level: sim.level,
       goal: sim.goal,
       passed,
       stars: passed ? levelStars(sim.stats.served, sim.goal) : 0,
-      unlocked: this.desbloqueado,
+      won,
+      perkNext,
     };
     this.sim = null;
     this.phase = 'summary';
     this.broadcast('summary', this.summary);
     this.broadcastRoom();
+  }
+
+  /** Partida perdida (o ganada): vuelta al nivel 1 sin habilidades. */
+  private resetRun(): void {
+    this.nivel = 1;
+    this.runPerks.clear();
+    for (const [id, m] of this.members) {
+      m.perks = [];
+      this.runPerks.set(this.memberKeys.get(id) ?? id, m.perks);
+    }
+  }
+
+  /** Cada cocinero recibe tres habilidades para elegir una. */
+  private offerPerks(): void {
+    this.phase = 'perks';
+    for (const m of this.members.values()) {
+      const offer = rollPerkOffer(m.perks, m.roles, this.modo === 1);
+      m.offer = offer.length ? offer : null;
+    }
+    this.checkPerksDone();
+  }
+
+  private pickPerk(id: string, perk: string): void {
+    const m = this.members.get(id);
+    if (this.phase !== 'perks' || !m?.offer?.includes(perk)) return;
+    // Se modifica la misma lista que guarda runPerks.
+    m.perks.push(perk);
+    m.offer = null;
+    this.checkPerksDone();
+    this.broadcastRoom();
+  }
+
+  /** Cuando todos han elegido, a la sala. */
+  private checkPerksDone(): void {
+    if (this.phase !== 'perks') return;
+    if ([...this.members.values()].every((m) => !m.offer)) this.phase = 'lobby';
   }
 
   private roomInfo(): RoomInfo {
@@ -260,7 +318,6 @@ export class KitchenRoom extends Room {
       modo: this.modo,
       members: [...this.members.values()],
       nivel: this.nivel,
-      desbloqueado: this.desbloqueado,
     };
   }
 

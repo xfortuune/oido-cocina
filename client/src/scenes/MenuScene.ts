@@ -42,7 +42,7 @@ export class MenuScene extends Phaser.Scene {
       'Carne a la plancha, patatas a la freidora, vasos a las máquinas.',
       'Monta la hamburguesa y entrega cada parte en el pase rojo.',
       'En equipo, cada uno lleva sus puestos y la caja toma nota.',
-      '20 niveles: sirve los pedidos del objetivo para pasar al siguiente.',
+      '20 niveles: cada 2, una habilidad. Si perdéis una ronda, al nivel 1.',
       touch ? 'Joystick para moverte, botón naranja para la acción.' : 'WASD o flechas para moverte, Espacio para la acción.',
     ].join('\n');
     const helpText = txt(this, W / 2, heroY + 140 * s, help, clamp(17 * s, 13, 20), {

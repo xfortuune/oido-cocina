@@ -102,6 +102,7 @@ export class KitchenScene extends Phaser.Scene {
     const onEvents = (evs: SimEvent[]) => evs.forEach((ev) => this.handleEvent(ev));
     const onRoom = (info: RoomInfo) => {
       if (info.phase === 'lobby') this.exitTo('lobby');
+      else if (info.phase === 'perks') this.exitTo('perks');
     };
     const onSummary = () => this.exitTo('summary', 900);
     const onLeft = () => this.exitTo('lobby');
@@ -164,7 +165,11 @@ export class KitchenScene extends Phaser.Scene {
     const st = this.sim.station(t.x, t.y);
     switch (t.kind) {
       case 'crate':
-        return held ? '—' : 'Coger';
+        if (!held) return 'Coger';
+        if (held.kind === 'food' && held.layers.length === 1 && held.layers[0] === t.crate) return 'Devolver';
+        return held.kind === 'food' && p.perks.includes('bandeja') && t.crate !== 'carne_cruda' && t.crate !== 'patatas'
+          ? 'Añadir'
+          : '—';
       case 'trash':
         return held ? 'Tirar' : '—';
       case 'pase':
@@ -226,7 +231,7 @@ export class KitchenScene extends Phaser.Scene {
     }
   }
 
-  private exitTo(scene: 'lobby' | 'summary', delay = 0): void {
+  private exitTo(scene: 'lobby' | 'summary' | 'perks', delay = 0): void {
     if (this.leaving) return;
     this.leaving = true;
     this.time.delayedCall(delay, () => {

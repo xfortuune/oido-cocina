@@ -45,10 +45,7 @@ async function bot(name, opts = {}) {
 const ana = await bot('Ana');
 const beto = await bot('Beto');
 check(ana.info?.members.length === 2, 'Los dos están en la misma sala');
-check(ana.info.nivel === 1 && ana.info.desbloqueado === 1, 'Sala nueva: nivel 1');
-ana.room.send('nivel', 5);
-await wait(200);
-check(ana.info.nivel === 1, 'No se puede elegir un nivel sin desbloquear');
+check(ana.info.nivel === 1, 'Sala nueva: nivel 1');
 
 beto.room.send('claim', 'plancha');
 beto.room.send('claim', 'freidora');
@@ -91,7 +88,7 @@ check(ana.me().holding?.layers?.[0] === 'carne' && !beto.me().holding, 'Beto le 
 // Fin del turno
 while (!ana.summary) await wait(200);
 const s = ana.summary;
-check(s.level === 1 && s.passed === false && s.stars === 0 && s.unlocked === 1, `Sin llegar al objetivo no se pasa (${s.stats.served}/${s.goal})`);
+check(s.level === 1 && s.passed === false && s.stars === 0 && !s.perkNext, `Sin llegar al objetivo no se pasa (${s.stats.served}/${s.goal})`);
 check(s.players.length === 2 && s.mvpId, `Resumen con ${s.players.length} cocineros; MVP: ${s.players.find((p) => p.id === s.mvpId)?.name}`);
 
 // Si Beto se va, Ana hereda sus puestos
@@ -116,19 +113,67 @@ await wait(300);
 check(c1.info.phase === 'playing', 'Con los 3 ya empieza');
 for (const b of [c1, c2, c3]) await b.room.leave();
 
-// Quien ya tiene niveles desbloqueados los lleva a la sala
-const sala5 = `bots5-${Date.now()}`;
-const v1 = await bot('Veterana', { sala: sala5, nivel: 6, modo: 4 });
-check(v1.info.nivel === 6 && v1.info.desbloqueado === 6, 'Entrar con el nivel 6 desbloqueado lo trae a la sala');
-v1.room.send('nivel', 3);
-await wait(200);
-check(v1.info.nivel === 3, 'Se puede bajar a un nivel anterior');
-await v1.room.leave();
-
 // Modo 1: el cliente dice directamente lo que quiere
 const solo = await bot('Solo', { sala: `solo-${Date.now()}`, modo: 1 });
 solo.room.send('start');
 while (!solo.snap?.orders.length) await wait(100);
 check(solo.snap.orders.every((o) => o.taken), 'Modo 1: los pedidos llegan sin pasar por caja');
 await solo.room.leave();
+
+// Partida en solitario desde el nivel 2: el bot cocina dos Chispas, supera el nivel,
+// elige habilidad, y al perder el nivel 3 vuelve al 1 sin habilidades.
+const chef = await bot('Chef', { sala: `perk-${Date.now()}`, modo: 1, nivel: 2, turno: 60 });
+check(chef.info.nivel === 2, 'Sala de prueba empezando en el nivel 2');
+chef.room.send('start');
+while (!chef.snap) await wait(100);
+const montajeHas = (n) => chef.snap.stations.some(([k, s]) => k === '4,5' && s.item?.layers?.length === n);
+async function chispa() {
+  await chef.walk([[2.5, 7.5]], [0, 1]);
+  await chef.act(); // carne cruda
+  await chef.walk([[1.5, 7.5], [1.5, 4.5]], [-1, 0]);
+  await chef.act(); // a la plancha
+  await chef.walk([[1.5, 7.5]], [0, 1]);
+  await chef.act(); // pan
+  await chef.walk([[3.5, 7.5], [3.5, 5.5]], [1, 0]);
+  await chef.act(); // base en la mesa de montaje
+  while (!chef.snap.stations.some(([k, s]) => k === '0,4' && s.item?.kind === 'food')) await wait(100);
+  await chef.walk([[1.5, 5.5], [1.5, 4.5]], [-1, 0]);
+  await chef.act(); // carne hecha
+  await chef.walk([[1.5, 5.5], [3.5, 5.5]], [1, 0]);
+  await chef.act();
+  await chef.walk([[3.5, 7.5]], [0, 1]);
+  await chef.act(); // queso
+  await chef.walk([[3.5, 5.5]], [1, 0]);
+  await chef.act();
+  await chef.walk([[3.5, 7.5], [1.5, 7.5]], [0, 1]);
+  await chef.act(); // pan de arriba
+  await chef.walk([[3.5, 7.5], [3.5, 5.5]], [1, 0]);
+  await chef.act();
+  const ok = montajeHas(4);
+  await chef.act(); // coger la hamburguesa
+  await chef.walk([[3.5, 4.5]], [0, -1]);
+  while (!chef.snap.orders.some((o) => o.recipeId === 'chispa' && !o.done.burger)) await wait(100);
+  await chef.act(); // servir
+  return ok;
+}
+check(await chispa(), 'El bot monta una Chispa completa');
+await chispa();
+check(chef.snap.stats.served >= 2, `Sirve ${chef.snap.stats.served} pedidos (objetivo ${chef.snap.goal})`);
+while (!chef.summary) await wait(200);
+check(chef.summary.passed && chef.summary.perkNext, 'Nivel 2 superado: toca elegir habilidad');
+chef.room.send('lobby');
+await wait(300);
+const offer = chef.info.members[0].offer;
+check(chef.info.phase === 'perks' && offer?.length === 3 && !offer.includes('labia'), `Le ofrecen 3 habilidades (${offer?.join(', ')})`);
+chef.room.send('perk', offer[0]);
+await wait(300);
+check(chef.info.phase === 'lobby' && chef.info.nivel === 3 && chef.info.members[0].perks[0] === offer[0], `Elige ${offer[0]} y pasa al nivel 3`);
+chef.summary = null;
+chef.room.send('start');
+await wait(300);
+check(chef.snap.players[0].perks[0] === offer[0], 'La habilidad le acompaña en la cocina');
+while (!chef.summary) await wait(500);
+await wait(300);
+check(!chef.summary.passed && chef.info.nivel === 1 && chef.info.members[0].perks.length === 0, 'Pierde el nivel 3: vuelta al nivel 1 sin habilidades');
+await chef.room.leave();
 process.exit(0);

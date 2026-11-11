@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
-import { formatDuration, getRecipe, levelParams, newRecipesAt, ROLE_NAMES, ROLES, type Role, type RoomInfo } from '@hora-punta/shared';
+import { formatDuration, getPerk, getRecipe, levelParams, newRecipesAt, ROLE_NAMES, ROLES, type Role, type RoomInfo } from '@hora-punta/shared';
 import { getIdentity, isInDiscord } from '../discord';
-import { net, saveName, savedName } from '../net';
+import { net, saveName, savedName, savedRecord } from '../net';
 import { CHEF_COLORS, chefKey } from '../pixel/sprites';
 import { clamp, COLORS, drawBackground, pixelPanel, txt } from '../theme';
 import { addAvatar, loadAvatars } from '../ui/avatars';
@@ -43,6 +43,7 @@ export class LobbyScene extends Phaser.Scene {
     const onRoom = (info: RoomInfo) => {
       if (info.phase === 'playing') this.scene.start('kitchen');
       else if (info.phase === 'summary' && net.summary) this.scene.start('summary');
+      else if (info.phase === 'perks') this.scene.start('perks');
       else if (info.modo === 1) {
         // Solo: nada que repartir ni esperar.
         this.status = 'Preparando la cocina…';
@@ -143,32 +144,18 @@ export class LobbyScene extends Phaser.Scene {
     });
     y += 46 * s;
 
-    // Nivel: se puede elegir cualquiera de los ya desbloqueados.
+    // Nivel de la partida: se sube ganando rondas y se vuelve al 1 al perder una.
     const lp = levelParams(info.nivel, info.modo);
-    const arrowW = 48 * s;
     const lvY = y + 20 * s;
-    new Button(this, W / 2 - 130 * s, lvY, {
-      w: arrowW,
-      h: 40 * s,
-      color: info.nivel > 1 ? COLORS.blue : 0x6b5a4a,
-      label: '◀',
-      fontSize: 18 * s,
-      onPress: () => info.nivel > 1 && net.setNivel(info.nivel - 1),
-    });
-    new Button(this, W / 2 + 130 * s, lvY, {
-      w: arrowW,
-      h: 40 * s,
-      color: info.nivel < info.desbloqueado ? COLORS.blue : 0x6b5a4a,
-      label: '▶',
-      fontSize: 18 * s,
-      onPress: () => info.nivel < info.desbloqueado && net.setNivel(info.nivel + 1),
-    });
     txt(this, W / 2, lvY, `Nivel ${info.nivel}`, 26 * s, { color: '#ffc93c', stroke: '#2b1d14', strokeThickness: 5 * s }).setOrigin(0.5);
     y += 44 * s;
     const fresh = newRecipesAt(info.nivel).map((id) => getRecipe(id).name);
-    const lvInfo = `Objetivo: ${lp.goal} pedidos en ${formatDuration(lp.duration)}${fresh.length ? ` · nueva: ${fresh.join(', ')}` : ''}`;
+    const record = savedRecord();
+    const lvInfo =
+      `Objetivo: ${lp.goal} pedidos en ${formatDuration(lp.duration)}${fresh.length ? ` · nueva: ${fresh.join(', ')}` : ''}` +
+      (info.nivel === 1 && record ? `\nTu récord: nivel ${record} superado` : '');
     txt(this, W / 2, y, lvInfo, 13 * s, { color: '#fff4dcbb', align: 'center', wordWrap: { width: W - 30 } }).setOrigin(0.5, 0);
-    y += 24 * s;
+    y += (info.nivel === 1 && record ? 40 : 24) * s;
 
     const missing = info.modo - info.members.length;
     if (missing > 0) {
@@ -178,12 +165,13 @@ export class LobbyScene extends Phaser.Scene {
 
     // Cocineros en la sala
     const boxW = Math.min(W - 24, W >= 900 ? 860 : 560);
-    const rowH = 30 * s;
+    const anyPerks = info.members.some((m) => m.perks.length);
+    const rowH = (anyPerks ? 46 : 30) * s;
     const listH = info.members.length * rowH + 16;
     const g = this.add.graphics();
     pixelPanel(g, W / 2 - boxW / 2, y, boxW, listH);
     info.members.forEach((m, i) => {
-      const ry = y + 8 + i * rowH + rowH / 2;
+      const ry = y + 8 + i * rowH + (anyPerks ? 15 * s : rowH / 2);
       this.add.image(W / 2 - boxW / 2 + 22, ry + 8 * s, chefKey(m.color, 'down', 0)).setScale(Math.max(1, Math.round(1.6 * s))).setOrigin(0.5, 1);
       const roles = m.roles.length ? m.roles.map((r) => ROLE_NAMES[r]).join(', ') : 'sin puesto';
       const label = `${m.name}${m.id === net.id ? ' (tú)' : ''}`;
@@ -193,6 +181,11 @@ export class LobbyScene extends Phaser.Scene {
       txt(this, nameX, ry, label, 17 * s, { color: CHEF_COLORS[m.color][1] }).setOrigin(0, 0.5);
       const r = txt(this, W / 2 + boxW / 2 - 12, ry, roles, 13 * s).setOrigin(1, 0.5);
       if (r.width > boxW * 0.5) r.setScale((boxW * 0.5) / r.width);
+      if (m.perks.length) {
+        const names = m.perks.map((id) => getPerk(id)?.name ?? id);
+        const pt = txt(this, nameX, ry + 14 * s, names.join(' · '), 11 * s, { color: '#ffc93c' });
+        if (pt.width > boxW - (nameX - (W / 2 - boxW / 2)) - 10) pt.setScale((boxW - (nameX - (W / 2 - boxW / 2)) - 10) / pt.width);
+      }
     });
     y += listH + 14 * s;
 

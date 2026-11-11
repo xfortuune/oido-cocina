@@ -50,7 +50,7 @@ class Net extends Phaser.Events.EventEmitter {
       secure,
       pathname: import.meta.env.DEV ? '/colyseus' : '',
     });
-    const room = await client.joinOrCreate(ROOM_NAME, { ...options, nivel: savedLevel() });
+    const room = await client.joinOrCreate(ROOM_NAME, options);
     this.room = room;
     room.onMessage('room', (info: RoomInfo) => {
       this.info = info;
@@ -65,7 +65,7 @@ class Net extends Phaser.Events.EventEmitter {
     room.onMessage('events', (events: SimEvent[]) => this.emit('events', events));
     room.onMessage('summary', (summary: SummaryInfo) => {
       this.summary = summary;
-      saveLevel(summary.unlocked);
+      saveRecord(summary.passed ? summary.level : summary.level - 1);
       this.emit('summary', summary);
     });
     room.onLeave(() => {
@@ -111,13 +111,13 @@ class Net extends Phaser.Events.EventEmitter {
     this.room?.send('start');
   }
 
-  setNivel(nivel: number): void {
-    this.room?.send('nivel', nivel);
+  /** Del resumen al vestíbulo (o a elegir habilidad, si toca). En solitario se sigue jugando directamente. */
+  backToLobby(): void {
+    this.room?.send('lobby');
   }
 
-  /** Vuelve al vestíbulo (y en solitario, a la cocina) con el nivel indicado. */
-  backToLobby(nivel?: number): void {
-    this.room?.send('lobby', nivel);
+  pickPerk(id: string): void {
+    this.room?.send('perk', id);
   }
 }
 
@@ -142,18 +142,18 @@ export function saveName(name: string): void {
   }
 }
 
-/** Nivel más alto desbloqueado en este navegador. */
-export function savedLevel(): number {
+/** Récord: el nivel más alto superado en este navegador. */
+export function savedRecord(): number {
   try {
-    return Math.max(1, Number(localStorage.getItem('horaPunta.nivel')) || 1);
+    return Math.max(0, Number(localStorage.getItem('horaPunta.record')) || 0);
   } catch {
-    return 1;
+    return 0;
   }
 }
 
-function saveLevel(nivel: number): void {
+function saveRecord(nivel: number): void {
   try {
-    if (nivel > savedLevel()) localStorage.setItem('horaPunta.nivel', String(nivel));
+    if (nivel > savedRecord()) localStorage.setItem('horaPunta.record', String(nivel));
   } catch {
     // Sin almacenamiento: el progreso dura solo esta sesión.
   }

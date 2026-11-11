@@ -417,7 +417,7 @@ export class HudScene extends Phaser.Scene {
       }
       case 'wrong': {
         const at = this.kitchen.worldToScreen(ev.x + 0.5, ev.y);
-        this.popup(at.x, at.y, `¡Receta incorrecta! -${ev.penalty}`, '#ff6b5b');
+        this.popup(at.x, at.y, ev.penalty ? `¡Receta incorrecta! -${ev.penalty}` : '¡Incorrecta! (disculpado)', '#ff6b5b');
         break;
       }
       case 'lost': {

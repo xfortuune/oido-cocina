@@ -59,7 +59,8 @@ export function levelParams(level: number, players: number): LevelParams {
   const spawnEnd = base * 0.85;
   const maxOrders = Math.max(2, Math.min(5, Math.round(lerp(2, 5, t) + (players - 1) * 0.35)));
   const patience = lerp(2, 0.85, t) * CROWD_PATIENCE[players];
-  const sideChance = level === 1 ? 0 : lerp(0.1, 0.75, t);
+  // En los dos primeros niveles solo hamburguesas.
+  const sideChance = level <= 2 ? 0 : lerp(0.1, 0.75, t);
   const recipes = RECIPES.filter((r) => (RECIPE_LEVEL[r.id] ?? 1) <= level).map((r) => r.id);
 
   // Objetivo: algo más de la mitad de los clientes que llegarían en la ronda.

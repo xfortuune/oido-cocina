@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { CUSTOMER_SLOTS_X, EMOTES, formatDuration, getPerk, getRecipe, newRecipesAt, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { addSoundToggle } from '../ui/SoundToggle';
+import { Button } from '../ui/Button';
+import type { SoundSetting } from '../audio';
 import { computeLayout, isTouchDevice, type Rect, type ScreenLayout } from '../layout';
 import { fillStack, stackPixelHeight } from '../pixel/items';
 import { net } from '../net';
@@ -40,6 +42,9 @@ export class HudScene extends Phaser.Scene {
   private emotes = new Map<string, { text: Phaser.GameObjects.Text; until: number }>();
   /** Menú de gestos (móvil). */
   private emoteMenu: Phaser.GameObjects.Container | null = null;
+  /** Menú de pausa: qué pantalla se ve, y si ya está dibujado para el estado actual. */
+  private pauseMode: 'menu' | 'config' = 'menu';
+  private shownPaused = false;
   /** El cartel de inicio de ronda solo sale una vez por ronda (no al girar el móvil). */
   private bannerShown = false;
   /** Nombre sobre cada cocinero. */
@@ -57,7 +62,19 @@ export class HudScene extends Phaser.Scene {
   create(): void {
     this.kitchen = this.scene.get('kitchen') as KitchenScene;
     this.bannerShown = false;
+    this.shownPaused = net.paused;
+    this.pauseMode = 'menu';
     this.build();
+
+    // Pausa: Escape (o el botón) la pide; el servidor la confirma para todos con 'room'.
+    const onEscape = () => this.onEscape();
+    const onRoom = () => this.syncPause();
+    this.kitchen.events.on('escape', onEscape);
+    net.on('room', onRoom);
+    this.events.once('shutdown', () => {
+      this.kitchen.events.off('escape', onEscape);
+      net.off('room', onRoom);
+    });
 
     const onSim = (ev: SimEvent) => this.onSimEvent(ev);
     this.kitchen.events.on('sim', onSim);
@@ -177,6 +194,14 @@ export class HudScene extends Phaser.Scene {
     })
       .setDepth(5)
       .setVisible(false);
+    // Pausa: en el móvil, arriba a la izquierda de los controles; en el PC, abajo a la derecha de la cocina.
+    const pauseBtn = this.add
+      .image(L.controls ? L.controls.x + 22 : L.kitchen.x + L.kitchen.w - 48, L.controls ? L.controls.y + 20 : L.kitchen.y + L.kitchen.h - 14, 'icon_pause')
+      .setScale(L.controls ? 3 : 2)
+      .setDepth(30)
+      .setData('ui', true)
+      .setInteractive({ useHandCursor: true });
+    pauseBtn.on('pointerdown', () => this.onEscape());
     // Altavoz: en el móvil, entre el joystick y el botón; en el PC, abajo a la derecha de la cocina.
     if (L.controls) {
       addSoundToggle(this, L.controls.x + L.controls.w / 2 + 24, L.controls.y + 20, 3, 30).setData('ui', true);
@@ -201,6 +226,130 @@ export class HudScene extends Phaser.Scene {
     else {
       this.hintText = txt(this, L.W / 2, L.H - 4, '', 14, { color: '#fff4dcaa' }).setOrigin(0.5, 1);
     }
+    if (net.paused) this.buildPause();
+  }
+
+  // ---------------------------------------------------------------- pausa
+
+  private onEscape(): void {
+    if (this.kitchen.sim.ended) return;
+    if (!net.paused) {
+      audio.sfx('click');
+      net.pause(true);
+    } else if (this.pauseMode === 'config') {
+      this.pauseMode = 'menu';
+      this.build();
+    } else net.pause(false);
+  }
+
+  /** El servidor ha pausado o reanudado (lo pida quien lo pida). */
+  private syncPause(): void {
+    const paused = net.paused;
+    if (paused === this.shownPaused) {
+      if (paused) this.build(); // por si cambia quién la pausó
+      return;
+    }
+    this.shownPaused = paused;
+    this.pauseMode = 'menu';
+    audio.music(paused ? 'menu' : 'kitchen');
+    if (!paused) audio.sfx('start');
+    this.build();
+  }
+
+  private buildPause(): void {
+    const { W, H } = this.L;
+    const depth = 100;
+    // Fondo oscuro que se traga los toques.
+    this.add.rectangle(0, 0, W, H, 0x1a110b, 0.72).setOrigin(0).setDepth(depth).setInteractive().setData('ui', true);
+    const s = clamp(Math.min(W / 480, H / 760), 0.75, 1.25);
+    const boxW = Math.min(W - 32, 380);
+    const solo = net.info?.modo === 1;
+    const g = this.add.graphics().setDepth(depth);
+    const btn = (y: number, label: string, color: number, onPress: () => void, w = boxW - 40) =>
+      new Button(this, W / 2, y, { w, h: 50 * s, color, label, fontSize: 18 * s, onPress }).setDepth(depth + 1);
+
+    if (this.pauseMode === 'menu') {
+      const desk = !this.L.controls;
+      const boxH = (solo ? 270 : 296) * s + (desk ? 22 * s : 0);
+      let y = H / 2 - boxH / 2;
+      pixelPanel(g, W / 2 - boxW / 2, y, boxW, boxH);
+      y += 18 * s;
+      txt(this, W / 2, y, 'Pausa', 32 * s, { color: '#ff8a3d', stroke: '#2b1d14', strokeThickness: 6 }).setOrigin(0.5, 0).setDepth(depth + 1);
+      y += 44 * s;
+      if (!solo) {
+        txt(this, W / 2, y, `Pausada por ${net.info?.paused} · para todos`, 13 * s, { color: '#6b5a4a' }).setOrigin(0.5, 0).setDepth(depth + 1);
+        y += 26 * s;
+      }
+      y += 34 * s;
+      btn(y, 'Reanudar', COLORS.green, () => net.pause(false));
+      y += 62 * s;
+      btn(y, 'Configuración', COLORS.blue, () => {
+        this.pauseMode = 'config';
+        this.build();
+      });
+      y += 62 * s;
+      btn(y, 'Salir al menú principal', COLORS.orange, () => this.kitchen.quitToMenu());
+      if (desk) txt(this, W / 2, y + 36 * s, 'Esc para reanudar', 12 * s, { color: '#6b5a4a' }).setOrigin(0.5, 0).setDepth(depth + 1);
+      return;
+    }
+
+    // Configuración: sonido, volumen y pantalla completa
+    const fullscreen = this.scale.fullscreen.available;
+    const boxH = (fullscreen ? 400 : 330) * s;
+    let y = H / 2 - boxH / 2;
+    pixelPanel(g, W / 2 - boxW / 2, y, boxW, boxH);
+    y += 16 * s;
+    txt(this, W / 2, y, 'Configuración', 26 * s, { color: '#4fa3e0', stroke: '#2b1d14', strokeThickness: 5 }).setOrigin(0.5, 0).setDepth(depth + 1);
+    y += 44 * s;
+
+    txt(this, W / 2, y, 'Sonido', 15 * s).setOrigin(0.5, 0).setDepth(depth + 1);
+    y += 34 * s;
+    const opts: [SoundSetting, string][] = [['todo', 'Todo'], ['efectos', 'Efectos'], ['nada', 'Nada']];
+    const ow = (boxW - 40 - 16) / 3;
+    opts.forEach(([v, label], i) => {
+      new Button(this, W / 2 + (i - 1) * (ow + 8), y, {
+        w: ow,
+        h: 40 * s,
+        color: audio.setting === v ? COLORS.orange : 0x8a7a6a,
+        label,
+        fontSize: 15 * s,
+        onPress: () => {
+          audio.setSetting(v);
+          this.build();
+        },
+      }).setDepth(depth + 1);
+    });
+    y += 46 * s;
+
+    txt(this, W / 2, y, 'Volumen', 15 * s).setOrigin(0.5, 0).setDepth(depth + 1);
+    y += 34 * s;
+    const vol = Math.round(audio.volume * 100);
+    txt(this, W / 2, y, `${vol} %`, 20 * s).setOrigin(0.5).setDepth(depth + 1);
+    const step = (d: number) => {
+      audio.setVolume(audio.volume + d);
+      audio.sfx('click');
+      this.build();
+    };
+    new Button(this, W / 2 - 90 * s, y, { w: 56 * s, h: 40 * s, color: COLORS.blue, label: '−', fontSize: 22 * s, onPress: () => step(-0.1) }).setDepth(depth + 1);
+    new Button(this, W / 2 + 90 * s, y, { w: 56 * s, h: 40 * s, color: COLORS.blue, label: '+', fontSize: 22 * s, onPress: () => step(0.1) }).setDepth(depth + 1);
+    y += 52 * s;
+
+    if (fullscreen) {
+      const on = this.scale.isFullscreen;
+      btn(y, on ? 'Salir de pantalla completa' : 'Pantalla completa', 0x8d6e63, () => {
+        try {
+          this.scale.toggleFullscreen();
+        } catch {
+          // En algunos iframes (Discord) no se permite.
+        }
+        this.time.delayedCall(300, () => this.build());
+      });
+      y += 62 * s;
+    }
+    btn(y, 'Volver', COLORS.green, () => {
+      this.pauseMode = 'menu';
+      this.build();
+    });
   }
 
   private buildTopBar(r: Rect): void {

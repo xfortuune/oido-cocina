@@ -423,6 +423,7 @@ function generateIcons(scene: Phaser.Scene): void {
   paint(scene, 'icon_sound_efectos', withRight(['....', '.c..', '..c.', '..c.', '..c.', '..c.', '.c..', '....']), pal, 9);
   paint(scene, 'icon_sound_nada', withRight(['....', 'r..r', '.rr.', '.rr.', 'r..r', '....', '....', '....']), pal, 9);
   // Gotita de sudor (clientes impacientes) y destello (servir).
+  paint(scene, 'icon_pause', ['kkkkkkkkk', 'kbbbbbbbk', 'kbkkbkkbk', 'kbkkbkkbk', 'kbkkbkkbk', 'kbkkbkkbk', 'kbbbbbbbk', 'kkkkkkkkk'], pal, 9);
   paint(scene, 'icon_chat', ['.kkkkkkk.', 'kbbbbbbbk', 'kbkbkbkbk', 'kbbbbbbbk', '.kkbkkkk.', '..kk.....'], pal, 9);
   paint(scene, 'icon_sweat', ['.c.', 'ccc', 'cbc', '.c.'], pal);
   paint(scene, 'icon_spark', ['..y..', '..y..', 'yybyy', '..y..', '..y..'], pal);

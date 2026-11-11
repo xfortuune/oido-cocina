@@ -290,6 +290,12 @@ dinero, tiempo, las habilidades de cada uno, el MVP de toda la partida y el **ra
 el ranking es **por servidor**, así que se ve qué grupo de amigos llega más lejos. También se puede consultar desde
 el menú («Ranking»). El servidor lo guarda en `server/data/ranking.json` (o en la ruta de `RANKING_FILE`).
 
+### Pausa
+
+Escape (o el botón de pausa) **para la ronda para todo el grupo**: el reloj, los clientes y los fogones se quedan
+quietos y a todos les sale el menú con «Pausada por …». Cualquiera puede reanudar. Desde la pausa:
+**Reanudar**, **Configuración** (sonido, volumen y pantalla completa) o **Salir al menú principal**.
+
 ### Social y Discord
 
 - **Invitar**: en Discord, la sala tiene un botón «Invitar» que abre el diálogo de Discord para llamar a tus amigos
@@ -331,6 +337,7 @@ acelera en los últimos 30 segundos de la ronda. El altavoz (menú, tienda y coc
 | Moverse | WASD o flechas | Joystick (izquierda) |
 | Acción (coger, dejar, apilar, servir, tomar nota, pasar) | Espacio, E o Enter | Botón naranja (muestra la acción) |
 | Gestos rápidos | 1, 2, 3, 4 | Icono del bocadillo |
+| Pausa (reanudar, configuración, salir al menú) | Escape o el icono ⏸ abajo a la derecha | Icono ⏸ arriba a la izquierda de los controles |
 
 ## Cómo funciona la red
 

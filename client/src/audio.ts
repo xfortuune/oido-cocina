@@ -67,6 +67,8 @@ class GameAudio {
   private bubble?: { gain: GainNode };
 
   setting: SoundSetting = load();
+  /** Volumen general, de 0 a 1 (en pasos de 0,1). */
+  volume = loadVolume();
   private mode: MusicMode = null;
   private intensity = 0;
   private step = 0;
@@ -80,7 +82,7 @@ class GameAudio {
       if (!Ctx) return;
       const ctx = (this.ctx = new Ctx());
       this.master = ctx.createGain();
-      this.master.gain.value = 0.8;
+      this.master.gain.value = 0.8 * this.volume;
       // Un compresor suave para que nada pegue picos.
       const comp = ctx.createDynamicsCompressor();
       comp.threshold.value = -18;
@@ -106,6 +108,22 @@ class GameAudio {
     save(this.setting);
     this.applySetting();
     return this.setting;
+  }
+
+  setSetting(v: SoundSetting): void {
+    this.setting = v;
+    save(v);
+    this.applySetting();
+  }
+
+  setVolume(v: number): void {
+    this.volume = Math.round(Math.max(0, Math.min(1, v)) * 10) / 10;
+    try {
+      localStorage.setItem('horaPunta.volumen', String(this.volume));
+    } catch {
+      // sin almacenamiento
+    }
+    if (this.ctx) this.master.gain.setTargetAtTime(0.8 * this.volume, this.ctx.currentTime, 0.05);
   }
 
   private applySetting(): void {
@@ -390,6 +408,16 @@ class GameAudio {
     src.start(t, Math.random() * 0.5);
     src.stop(t + dur + 0.02);
   }
+}
+
+function loadVolume(): number {
+  try {
+    const v = Number(localStorage.getItem('horaPunta.volumen'));
+    if (localStorage.getItem('horaPunta.volumen') !== null && v >= 0 && v <= 1) return v;
+  } catch {
+    // sin almacenamiento
+  }
+  return 0.8;
 }
 
 function load(): SoundSetting {

@@ -107,6 +107,12 @@ export class KitchenScene extends Phaser.Scene {
     }) as typeof this.keys;
     kb.on('keydown', (e: KeyboardEvent) => {
       if (e.repeat) return;
+      // Escape: pausa (o vuelve atrás en el menú de pausa, que lo gestiona el HUD).
+      if (e.key === 'Escape') {
+        this.events.emit('escape');
+        return;
+      }
+      if (net.paused) return;
       if (e.key === ' ' || e.key === 'e' || e.key === 'E' || e.key === 'Enter') this.interact();
       // Gestos rápidos: 1 ¡Oído!, 2 ¡Ayuda!, 3 ¡Marchando!, 4 ¡Gracias!
       const n = Number(e.key);
@@ -143,7 +149,16 @@ export class KitchenScene extends Phaser.Scene {
   }
 
   interact(): void {
-    if (this.localPlayer) net.interact(this.pose());
+    if (this.localPlayer && !net.paused) net.interact(this.pose());
+  }
+
+  /** Salir de la partida al menú principal (desde la pausa). */
+  quitToMenu(): void {
+    if (this.leaving) return;
+    this.leaving = true;
+    this.scene.stop('hud');
+    this.scene.start('menu');
+    void net.leave();
   }
 
   get localPlayer(): Player | undefined {
@@ -220,7 +235,7 @@ export class KitchenScene extends Phaser.Scene {
     this.syncCustomers(time);
     this.drawOverlay(time);
     // La música se acelera en los últimos 30 segundos.
-    audio.setIntensity(this.sim.ended ? 0 : 1 - this.sim.timeLeft / 30);
+    audio.setIntensity(this.sim.ended || net.paused ? 0 : 1 - this.sim.timeLeft / 30);
   }
 
   // ---------------------------------------------------------------- red
@@ -234,6 +249,11 @@ export class KitchenScene extends Phaser.Scene {
   private moveLocal(dt: number): void {
     const p = this.localPlayer;
     if (!p || this.sim.ended) return;
+    if (net.paused) {
+      // En pausa nadie se mueve.
+      p.inputX = p.inputY = 0;
+      return;
+    }
     const k = this.keys;
     let x = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
     let y = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
@@ -332,7 +352,7 @@ export class KitchenScene extends Phaser.Scene {
       // Saltito al cambiar lo que hay encima.
       if (item) this.tweens.add({ targets: view.container, scaleX: { from: 1.25, to: 1 }, scaleY: { from: 0.8, to: 1 }, duration: 160, ease: 'Back.Out' });
     }
-    audio.setAmbience(grills, fryers);
+    audio.setAmbience(net.paused ? 0 : grills, net.paused ? 0 : fryers);
   }
 
   /** Una nubecilla que sube y se desvanece. */

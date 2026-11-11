@@ -68,6 +68,8 @@ export class KitchenRoom extends Room {
   private summary: SummaryInfo | null = null;
   private lastInput = new Map<string, number>();
   private lastEmote = new Map<string, number>();
+  /** Nombre de quien ha pausado la ronda (null si no está en pausa). La pausa es para todos. */
+  private pausedBy: string | null = null;
 
   onCreate(options: JoinOptions): void {
     this.sala = String(options.sala ?? 'local');
@@ -78,8 +80,18 @@ export class KitchenRoom extends Room {
     this.grupo = cleanGroup(options.grupo);
 
     this.onMessage('input', (client, msg: InputMessage) => this.applyInput(client.sessionId, msg));
+    this.onMessage('pause', (client, on: boolean) => {
+      if (this.phase !== 'playing') return;
+      const name = this.members.get(client.sessionId)?.name ?? '?';
+      const next = on ? (this.pausedBy ?? name) : null;
+      if (next === this.pausedBy) return;
+      this.pausedBy = next;
+      // Al pausar, que nadie se quede andando solo.
+      if (this.sim) for (const p of this.sim.players.values()) p.inputX = p.inputY = 0;
+      this.broadcastRoom();
+    });
     this.onMessage('interact', (client, msg: InputMessage) => {
-      if (this.phase !== 'playing' || !this.sim) return;
+      if (this.phase !== 'playing' || !this.sim || this.pausedBy) return;
       this.applyInput(client.sessionId, msg);
       this.sim.interact(client.sessionId);
     });
@@ -258,12 +270,13 @@ export class KitchenRoom extends Room {
     sim.reputation += 10 * fans + (this.mejoras.includes('resenas') ? 15 : 0);
     this.sim = sim;
     this.summary = null;
+    this.pausedBy = null;
     this.phase = 'playing';
     this.broadcastRoom();
   }
 
   private applyInput(id: string, msg: InputMessage): void {
-    if (!this.sim || !msg) return;
+    if (!this.sim || !msg || this.pausedBy) return;
     const now = Date.now();
     const dt = (now - (this.lastInput.get(id) ?? now - TICK_MS)) / 1000;
     this.lastInput.set(id, now);
@@ -272,7 +285,7 @@ export class KitchenRoom extends Room {
 
   private tick(deltaMs: number): void {
     const sim = this.sim;
-    if (this.phase !== 'playing' || !sim) return;
+    if (this.phase !== 'playing' || !sim || this.pausedBy) return;
     sim.tick(Math.min(deltaMs, 200) / 1000);
     const events = sim.drainEvents();
     if (events.length) this.broadcast('events', events);
@@ -329,6 +342,7 @@ export class KitchenRoom extends Room {
       run: runSummary,
     };
     this.sim = null;
+    this.pausedBy = null;
     this.phase = 'summary';
     this.broadcast('summary', this.summary);
     this.broadcastRoom();
@@ -433,6 +447,7 @@ export class KitchenRoom extends Room {
       nivel: this.nivel,
       dinero: this.dinero,
       mejoras: this.mejoras,
+      paused: this.pausedBy,
     };
   }
 

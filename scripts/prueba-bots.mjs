@@ -67,6 +67,14 @@ ana.room.send('emote', 1);
 ana.room.send('emote', 2);
 await wait(300);
 check(beto.emotes.length === 1 && beto.emotes[0].id === ana.id && beto.emotes[0].emote === 1, 'Ana grita «¡Ayuda!» y Beto lo ve (el segundo gesto seguido se ignora)');
+ana.room.send('pause', true);
+await wait(300);
+const t0 = beto.snap.time;
+await wait(600);
+check(beto.info.paused === 'Ana' && beto.snap.time === t0, 'Ana pausa: Beto ve «Pausada por Ana» y el reloj se para');
+beto.room.send('pause', false);
+await wait(400);
+check(beto.info.paused === null && beto.snap.time > t0, 'Beto reanuda y el reloj sigue');
 
 // Beto: carne cruda a la plancha
 await beto.walk([[2.5, 7.5]], [0, 1]);

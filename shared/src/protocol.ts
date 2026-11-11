@@ -10,6 +10,7 @@
 //   'buy'      UpgradeId: comprar una mejora en la tienda (dinero de todo el equipo)
 //   'ready'    en la tienda: listo para seguir (cuando lo están todos, a la sala)
 //   'emote'    number: gesto rápido (índice de EMOTES), en la cocina
+//   'pause'    boolean: pausar o reanudar la ronda (para todos)
 //   'modo'     number: cambiar cuántos jugadores se esperan (2-4, en el vestíbulo)
 //
 // Servidor → cliente:
@@ -107,6 +108,8 @@ export interface RoomInfo {
   dinero: number;
   /** Mejoras de la tienda compradas en esta partida. */
   mejoras: string[];
+  /** Quién ha pausado la ronda (null si no está en pausa). */
+  paused: string | null;
 }
 
 export interface RankingEntry {

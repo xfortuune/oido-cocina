@@ -134,6 +134,15 @@ class Net extends Phaser.Events.EventEmitter {
     this.room?.send('ready');
   }
 
+  /** Pausa o reanuda la ronda (para todo el grupo). */
+  pause(on: boolean): void {
+    this.room?.send('pause', on);
+  }
+
+  get paused(): boolean {
+    return !!this.info?.paused && this.info.phase === 'playing';
+  }
+
   emote(n: number): void {
     this.room?.send('emote', n);
   }

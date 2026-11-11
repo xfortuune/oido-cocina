@@ -1,0 +1,20 @@
+{
+  "name": "hora-punta",
+  "private": true,
+  "version": "0.3.0",
+  "description": "¡Oído, Cocina!: juego cooperativo de hamburguesería para Discord Activities",
+  "workspaces": [
+    "shared",
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c yellow,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "start": "npm start -w server",
+    "typecheck": "tsc -p client --noEmit && tsc -p server --noEmit"
+  },
+  "devDependencies": {
+    "concurrently": "9.2.1"
+  }
+}

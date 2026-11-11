@@ -169,6 +169,24 @@ jugar con amigos; si el servidor se reinicia, las partidas en curso se pierden.
 Para que la Actividad la pueda usar **cualquiera** (no solo tu equipo) hay que pasar por el proceso de
 distribución y verificación de Discord. Para jugar con tus amigos no hace falta.
 
+## Publicarlo en Railway
+
+Un solo servicio de Railway hace todo: sirve el juego, el login de Discord (`/api/token`), el ranking y el
+multijugador (WebSockets), por el mismo puerto. No hace falta port forwarding ni un segundo servicio.
+
+1. **New Project → Deploy from GitHub repo** → `oido-cocina`, rama `main`, carpeta raíz del repositorio.
+   `railway.json` ya le dice cómo compilar (`npm run build`) y arrancar (`npm start`), con comprobación en `/health`.
+2. **Variables**:
+   - `VITE_DISCORD_CLIENT_ID`: el ID de la aplicación (se usa al compilar).
+   - `DISCORD_CLIENT_SECRET`: el secreto de OAuth2.
+   - `REQUIRE_DISCORD=1` (opcional): solo se puede entrar desde Discord.
+   - `RANKING_FILE=/data/ranking.json` con un **Volume** montado en `/data`, para que el ranking no se borre en cada despliegue.
+   - No pongas `PORT` ni `SERVER_PORT`: Railway da el puerto y el servidor lo usa.
+3. **Settings → Networking → Generate Domain**: te da una dirección como `oido-cocina-production.up.railway.app`.
+   Ábrela en el navegador para probar (tú y tus amigos, con `?sala=algo` para jugar juntos).
+4. En el Developer Portal de Discord, **Activities → URL Mappings**: prefijo `/` → esa dirección (sin `https://`).
+
+
 ## Cómo se juega
 
 ### Modos

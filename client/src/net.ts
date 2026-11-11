@@ -50,10 +50,12 @@ class Net extends Phaser.Events.EventEmitter {
       secure,
       pathname: import.meta.env.DEV ? '/colyseus' : '',
     });
-    const room = await client.joinOrCreate(ROOM_NAME, options);
+    const room = await client.joinOrCreate(ROOM_NAME, { ...options, nivel: savedLevel() });
     this.room = room;
     room.onMessage('room', (info: RoomInfo) => {
       this.info = info;
+      // Fuera de la cocina la última instantánea ya no vale (sería de la ronda anterior).
+      if (info.phase !== 'playing') this.snapshot = null;
       this.emit('room', info);
     });
     room.onMessage('snap', (snap: SimSnapshot) => {
@@ -63,6 +65,7 @@ class Net extends Phaser.Events.EventEmitter {
     room.onMessage('events', (events: SimEvent[]) => this.emit('events', events));
     room.onMessage('summary', (summary: SummaryInfo) => {
       this.summary = summary;
+      saveLevel(summary.unlocked);
       this.emit('summary', summary);
     });
     room.onLeave(() => {
@@ -108,8 +111,13 @@ class Net extends Phaser.Events.EventEmitter {
     this.room?.send('start');
   }
 
-  backToLobby(): void {
-    this.room?.send('lobby');
+  setNivel(nivel: number): void {
+    this.room?.send('nivel', nivel);
+  }
+
+  /** Vuelve al vestíbulo (y en solitario, a la cocina) con el nivel indicado. */
+  backToLobby(nivel?: number): void {
+    this.room?.send('lobby', nivel);
   }
 }
 
@@ -131,5 +139,22 @@ export function saveName(name: string): void {
     localStorage.setItem('horaPunta.name', name);
   } catch {
     // Sin almacenamiento: el nombre dura solo esta sesión.
+  }
+}
+
+/** Nivel más alto desbloqueado en este navegador. */
+export function savedLevel(): number {
+  try {
+    return Math.max(1, Number(localStorage.getItem('horaPunta.nivel')) || 1);
+  } catch {
+    return 1;
+  }
+}
+
+function saveLevel(nivel: number): void {
+  try {
+    if (nivel > savedLevel()) localStorage.setItem('horaPunta.nivel', String(nivel));
+  } catch {
+    // Sin almacenamiento: el progreso dura solo esta sesión.
   }
 }

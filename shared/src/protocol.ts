@@ -6,6 +6,7 @@
 //   'claim'    Role: quedarse un puesto en el vestíbulo
 //   'start'    empezar el turno (cualquiera, si todos los puestos están cubiertos)
 //   'lobby'    volver al vestíbulo desde el resumen
+//   'nivel'    number: elegir nivel (en el vestíbulo o el resumen; solo los ya desbloqueados)
 //   'modo'     number: cambiar cuántos jugadores se esperan (2-4, en el vestíbulo)
 //
 // Servidor → cliente:
@@ -24,8 +25,10 @@ export interface JoinOptions {
   /** Sala: en Discord será el id de la instancia de la Actividad. */
   sala: string;
   name: string;
-  /** Duración del turno en segundos (solo para pruebas). */
+  /** Duración de la ronda en segundos (solo para pruebas). */
   turno?: number;
+  /** Nivel más alto que este jugador ya tiene desbloqueado (guardado en su navegador). */
+  nivel?: number;
   /** Token de Discord: el servidor lo usa para saber quién eres (nombre y avatar verificados). */
   accessToken?: string;
   /** Cuántos jugadores (1-4). Lo fija quien crea la sala. */
@@ -76,6 +79,10 @@ export interface RoomInfo {
   /** Jugadores que se esperan para empezar (1-4). */
   modo: number;
   members: LobbyMember[];
+  /** Nivel que se va a jugar. */
+  nivel: number;
+  /** Nivel más alto desbloqueado en esta sala. */
+  desbloqueado: number;
 }
 
 export interface SummaryPlayer extends LobbyMember {
@@ -90,4 +97,12 @@ export interface SummaryInfo {
   endReason: EndReason;
   players: SummaryPlayer[];
   mvpId: string | null;
+  level: number;
+  goal: number;
+  /** Se ha llegado al objetivo de pedidos sin perder toda la reputación. */
+  passed: boolean;
+  /** 0-3 (0 si no se ha pasado). */
+  stars: number;
+  /** Nivel más alto desbloqueado tras esta ronda. */
+  unlocked: number;
 }

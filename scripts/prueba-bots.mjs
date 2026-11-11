@@ -45,6 +45,10 @@ async function bot(name, opts = {}) {
 const ana = await bot('Ana');
 const beto = await bot('Beto');
 check(ana.info?.members.length === 2, 'Los dos están en la misma sala');
+check(ana.info.nivel === 1 && ana.info.desbloqueado === 1, 'Sala nueva: nivel 1');
+ana.room.send('nivel', 5);
+await wait(200);
+check(ana.info.nivel === 1, 'No se puede elegir un nivel sin desbloquear');
 
 beto.room.send('claim', 'plancha');
 beto.room.send('claim', 'freidora');
@@ -55,6 +59,7 @@ check(roles(ana) === 'caja+montaje' && roles(beto) === 'plancha+freidora', `Repa
 ana.room.send('start');
 await wait(400);
 check(ana.info.phase === 'playing' && !!beto.snap, 'Empieza el turno en los dos');
+check(beto.snap.level === 1 && beto.snap.goal >= 2, `La ronda es del nivel 1 con objetivo ${beto.snap.goal}`);
 
 // Beto: carne cruda a la plancha
 await beto.walk([[2.5, 7.5]], [0, 1]);
@@ -86,6 +91,7 @@ check(ana.me().holding?.layers?.[0] === 'carne' && !beto.me().holding, 'Beto le 
 // Fin del turno
 while (!ana.summary) await wait(200);
 const s = ana.summary;
+check(s.level === 1 && s.passed === false && s.stars === 0 && s.unlocked === 1, `Sin llegar al objetivo no se pasa (${s.stats.served}/${s.goal})`);
 check(s.players.length === 2 && s.mvpId, `Resumen con ${s.players.length} cocineros; MVP: ${s.players.find((p) => p.id === s.mvpId)?.name}`);
 
 // Si Beto se va, Ana hereda sus puestos
@@ -109,6 +115,15 @@ c1.room.send('start');
 await wait(300);
 check(c1.info.phase === 'playing', 'Con los 3 ya empieza');
 for (const b of [c1, c2, c3]) await b.room.leave();
+
+// Quien ya tiene niveles desbloqueados los lleva a la sala
+const sala5 = `bots5-${Date.now()}`;
+const v1 = await bot('Veterana', { sala: sala5, nivel: 6, modo: 4 });
+check(v1.info.nivel === 6 && v1.info.desbloqueado === 6, 'Entrar con el nivel 6 desbloqueado lo trae a la sala');
+v1.room.send('nivel', 3);
+await wait(200);
+check(v1.info.nivel === 3, 'Se puede bajar a un nivel anterior');
+await v1.room.leave();
 
 // Modo 1: el cliente dice directamente lo que quiere
 const solo = await bot('Solo', { sala: `solo-${Date.now()}`, modo: 1 });

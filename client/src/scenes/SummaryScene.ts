@@ -1,12 +1,12 @@
 import Phaser from 'phaser';
-import type { RoomInfo } from '@hora-punta/shared';
+import { getRecipe, MAX_LEVEL, newRecipesAt, type RoomInfo } from '@hora-punta/shared';
 import { net } from '../net';
 import { CHEF_COLORS, chefKey } from '../pixel/sprites';
 import { clamp, COLORS, drawBackground, pixelPanel, txt } from '../theme';
 import { addAvatar } from '../ui/avatars';
 import { Button } from '../ui/Button';
 
-/** Resumen del turno: totales del equipo, aportación de cada cocinero y MVP. */
+/** Resumen de la ronda: si se ha pasado el nivel, totales del equipo, aportación de cada cocinero y MVP. */
 export class SummaryScene extends Phaser.Scene {
   constructor() {
     super('summary');
@@ -35,21 +35,30 @@ export class SummaryScene extends Phaser.Scene {
     const { width: W, height: H } = this.scale;
     drawBackground(this);
     if (!summary) return;
-    const { stats, money, reputation, endReason, players, mvpId } = summary;
+    const { stats, money, reputation, endReason, players, mvpId, level, goal, passed, stars } = summary;
     const s = clamp(Math.min(W / 480, H / 760), 0.7, 1.3);
 
-    const title = endReason === 'reputation' ? '¡Reputación por los suelos!' : '¡Fin del turno!';
+    const title = passed
+      ? level >= MAX_LEVEL
+        ? '¡Nivel 20 superado!'
+        : `¡Nivel ${level} superado!`
+      : endReason === 'reputation'
+        ? '¡Reputación por los suelos!'
+        : `Nivel ${level} no superado`;
     let y = H * 0.03;
     const titleText = txt(this, W / 2, y, title, 36 * s, {
-      color: '#ff8a3d',
+      color: passed ? '#7ee081' : '#ff8a3d',
       stroke: '#2b1d14',
       strokeThickness: 8 * s,
       align: 'center',
       wordWrap: { width: W - 30 },
     }).setOrigin(0.5, 0);
-    y += titleText.height + 6;
-
-    const stars = stats.served >= 16 ? 3 : stats.served >= 10 ? 2 : stats.served >= 5 ? 1 : 0;
+    y += titleText.height + 4;
+    const goalLine = passed
+      ? `Servidos ${stats.served} de ${goal}`
+      : `Servidos ${stats.served} de ${goal}: ¡a por ello otra vez!`;
+    txt(this, W / 2, y, goalLine, 16 * s, { color: '#fff4dc' }).setOrigin(0.5, 0);
+    y += 24 * s;
     const starPx = Math.round(4 * s);
     for (let i = 0; i < 3; i++) {
       this.add
@@ -111,31 +120,47 @@ export class SummaryScene extends Phaser.Scene {
     y += listH + 8;
     const mvp = players.find((p) => p.id === mvpId);
     if (mvp && players.length > 1) {
-      txt(this, W / 2, y, `MVP del turno: ${mvp.name}`, fs * 1.1, { color: '#ffc93c', stroke: '#2b1d14', strokeThickness: 4 }).setOrigin(0.5, 0);
+      txt(this, W / 2, y, `MVP de la ronda: ${mvp.name}`, fs * 1.1, { color: '#ffc93c', stroke: '#2b1d14', strokeThickness: 4 }).setOrigin(0.5, 0);
       y += fs * 1.8;
     }
 
-    const by = Math.min(H - 40 * s, y + 34 * s);
-    const bw = Math.min((boxW - 12) / 2, 220);
-    new Button(this, W / 2 - bw / 2 - 6, by, {
-      w: bw,
-      h: 56 * s,
-      color: COLORS.green,
-      // En solitario no hay sala que esperar: se vuelve a la cocina directamente.
-      label: net.info?.modo === 1 ? 'Otro turno' : 'Volver a la sala',
-      fontSize: 20 * s,
-      onPress: () => net.backToLobby(),
+    const next = passed && level < MAX_LEVEL ? level + 1 : 0;
+    const fresh = next ? newRecipesAt(next).map((id) => getRecipe(id).name) : [];
+    if (fresh.length) {
+      txt(this, W / 2, y, `En el nivel ${next} llega: ${fresh.join(', ')}`, fs, { color: '#7ee081' }).setOrigin(0.5, 0);
+      y += fs * 1.8;
+    }
+
+    // Siguiente nivel (si se ha pasado), repetir, y salir.
+    const buttons: { label: string; color: number; onPress: () => void }[] = [];
+    if (next) buttons.push({ label: `Nivel ${next}`, color: COLORS.green, onPress: () => net.backToLobby(next) });
+    buttons.push({
+      label: passed ? 'Repetir' : 'Reintentar',
+      color: passed ? COLORS.blue : COLORS.green,
+      onPress: () => net.backToLobby(level),
     });
-    new Button(this, W / 2 + bw / 2 + 6, by, {
-      w: bw,
-      h: 56 * s,
-      color: COLORS.orange,
+    buttons.push({
       label: 'Salir',
-      fontSize: 20 * s,
+      color: COLORS.orange,
       onPress: () => {
         void net.leave();
         this.scene.start('menu');
       },
     });
+    const by = Math.min(H - 40 * s, y + 34 * s);
+    const bw = Math.min((boxW - 10 * (buttons.length - 1)) / buttons.length, 200);
+    buttons.forEach((b, i) => {
+      new Button(this, W / 2 + (i - (buttons.length - 1) / 2) * (bw + 10), by, {
+        w: bw,
+        h: 56 * s,
+        color: b.color,
+        label: b.label,
+        fontSize: 19 * s,
+        onPress: b.onPress,
+      });
+    });
+    if (net.info?.modo !== 1) {
+      txt(this, W / 2, by + 34 * s, 'Volveréis a la sala para empezar juntos', 12 * s, { color: '#fff4dc99' }).setOrigin(0.5, 0);
+    }
   }
 }

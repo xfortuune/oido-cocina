@@ -1,8 +1,11 @@
 import { Room, ServerError, type Client } from 'colyseus';
 import {
+  clampLevel,
   clampModo,
-  CONFIG,
   KitchenSim,
+  levelParams,
+  levelStars,
+  MAX_LEVEL,
   ROLE_PRESETS,
   MAX_PLAYERS,
   mvpScore,
@@ -37,7 +40,10 @@ export class KitchenRoom extends Room {
   private sala = '';
   /** Jugadores que se esperan para empezar (1-4). */
   private modo = 2;
-  private turnDuration = CONFIG.turnDuration;
+  /** Duración forzada de la ronda (solo para pruebas). */
+  private turnDuration = 0;
+  private nivel = 1;
+  private desbloqueado = 1;
   private members = new Map<string, LobbyMember>();
   private sim: KitchenSim | null = null;
   private summary: SummaryInfo | null = null;
@@ -47,7 +53,7 @@ export class KitchenRoom extends Room {
     this.sala = String(options.sala ?? 'local');
     this.modo = clampModo(options.modo);
     const turno = Number(options.turno);
-    if (turno > 0) this.turnDuration = Math.max(10, Math.min(CONFIG.turnDuration, turno));
+    if (turno > 0) this.turnDuration = Math.max(10, Math.min(300, turno));
 
     this.onMessage('input', (client, msg: InputMessage) => this.applyInput(client.sessionId, msg));
     this.onMessage('interact', (client, msg: InputMessage) => {
@@ -79,8 +85,14 @@ export class KitchenRoom extends Room {
       this.broadcastRoom();
     });
     this.onMessage('start', () => this.startTurn());
-    this.onMessage('lobby', () => {
+    this.onMessage('nivel', (_client, n: number) => {
+      if (this.phase === 'playing') return;
+      this.nivel = clampLevel(n, this.desbloqueado);
+      this.broadcastRoom();
+    });
+    this.onMessage('lobby', (_client, n?: number) => {
       if (this.phase !== 'summary') return;
+      if (n !== undefined && n !== null) this.nivel = clampLevel(n, this.desbloqueado);
       this.phase = 'lobby';
       this.summary = null;
       this.broadcastRoom();
@@ -113,6 +125,12 @@ export class KitchenRoom extends Room {
     const name = user?.name ?? (String(options.name ?? '').trim().slice(0, 20) || `Cocinero ${color + 1}`);
     const member: LobbyMember = { id: client.sessionId, name, color, roles: [], avatar: user?.avatar ?? null };
     this.members.set(client.sessionId, member);
+    // La sala puede jugar hasta el nivel más alto que tenga desbloqueado cualquiera de los que entran.
+    const theirs = clampLevel(options.nivel);
+    if (theirs > this.desbloqueado) {
+      this.desbloqueado = theirs;
+      if (this.phase === 'lobby' && this.members.size === 1) this.nivel = theirs;
+    }
     if (this.phase !== 'playing') this.assignRoles();
 
     // Quien entra a mitad de turno ayuda llevando cosas hasta el siguiente turno.
@@ -177,11 +195,10 @@ export class KitchenRoom extends Room {
     const covered = new Set([...this.members.values()].flatMap((m) => m.roles));
     if (!ROLES.every((r) => covered.has(r)) || this.members.size < this.modo) return;
 
-    const sim = new KitchenSim();
+    const sim = new KitchenSim(levelParams(this.nivel, this.modo));
     sim.moveOnTick = false;
     sim.needsCaja = this.modo > 1;
-    sim.crowd = this.modo;
-    sim.turnDuration = this.turnDuration;
+    if (this.turnDuration) sim.turnDuration = this.turnDuration;
     for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles);
     this.sim = sim;
     this.summary = null;
@@ -213,6 +230,10 @@ export class KitchenRoom extends Room {
       return { ...m, stats, score: mvpScore(stats) };
     });
     const best = [...players].sort((a, b) => b.score - a.score)[0];
+    const passed = sim.endReason !== 'reputation' && sim.stats.served >= sim.goal;
+    if (passed && sim.level === this.desbloqueado && this.desbloqueado < MAX_LEVEL) this.desbloqueado++;
+    // Si se pasa, por defecto se juega el siguiente; si no, se repite.
+    if (passed) this.nivel = Math.min(this.desbloqueado, sim.level + 1);
     this.summary = {
       stats: sim.stats,
       money: sim.money,
@@ -220,6 +241,11 @@ export class KitchenRoom extends Room {
       endReason: sim.endReason ?? 'time',
       players,
       mvpId: best?.id ?? null,
+      level: sim.level,
+      goal: sim.goal,
+      passed,
+      stars: passed ? levelStars(sim.stats.served, sim.goal) : 0,
+      unlocked: this.desbloqueado,
     };
     this.sim = null;
     this.phase = 'summary';
@@ -228,7 +254,14 @@ export class KitchenRoom extends Room {
   }
 
   private roomInfo(): RoomInfo {
-    return { phase: this.phase, sala: this.sala, modo: this.modo, members: [...this.members.values()] };
+    return {
+      phase: this.phase,
+      sala: this.sala,
+      modo: this.modo,
+      members: [...this.members.values()],
+      nivel: this.nivel,
+      desbloqueado: this.desbloqueado,
+    };
   }
 
   private broadcastRoom(): void {

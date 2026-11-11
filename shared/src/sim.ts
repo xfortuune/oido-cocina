@@ -13,24 +13,20 @@ import {
   type Tile,
   type TileKind,
 } from './kitchen';
-import { getRecipe, STARTER_RECIPES, type Ingredient } from './recipes';
+import { levelParams, RECIPE_LEVEL, type LevelParams } from './levels';
+import { getRecipe, type Ingredient } from './recipes';
 
 export const CONFIG = {
-  turnDuration: 180,
-  maxOrders: CUSTOMER_SLOTS_X.length,
   maxStack: 12,
   startReputation: 50,
   maxReputation: 100,
-  /** Segundos entre pedidos al principio y al final del turno. */
-  spawnIntervalStart: 14,
-  spawnIntervalEnd: 8,
-  /** Paciencia = base + segundos por capa y por acompañamiento; se reduce un 15 % hacia el final. */
+  /**
+   * Paciencia = (base + segundos por capa y por acompañamiento) × la del nivel;
+   * se reduce un 15 % hacia el final de la ronda. El ritmo de clientes lo marca el nivel (levels.ts).
+   */
   patienceBase: 40,
   patiencePerLayer: 6,
   patiencePerSide: 12,
-  /** Probabilidad de que un pedido lleve patatas / bebida, al principio y al final del turno. */
-  sideChanceStart: 0.3,
-  sideChanceEnd: 0.7,
   friesPrice: 3,
   drinkPrice: 2,
   perfectThreshold: 0.5,
@@ -171,6 +167,8 @@ export type EndReason = 'time' | 'reputation';
 export interface SimSnapshot {
   time: number;
   turnDuration: number;
+  level: number;
+  goal: number;
   money: number;
   reputation: number;
   ended: boolean;
@@ -195,25 +193,31 @@ export class KitchenSim {
   stats: TurnStats = { served: 0, perfect: 0, wrong: 0, lost: 0, burnt: 0, trashed: 0, tips: 0, earned: 0 };
   ended = false;
   endReason: EndReason | null = null;
-  /** Duración del turno en segundos (se puede acortar para pruebas). */
-  turnDuration = CONFIG.turnDuration;
+  /** Duración de la ronda en segundos (se puede acortar para pruebas). */
+  turnDuration: number;
+  level: number;
+  /** Pedidos que hay que servir para pasar de nivel. */
+  goal: number;
   playerStats: Record<string, PlayerStats> = {};
 
   /** En el servidor no se mueve a nadie: cada cliente manda la posición de su cocinero. */
   moveOnTick = true;
   /** Si hace falta que la caja tome nota (no en el modo de un jugador). */
   needsCaja = true;
-  /** Jugadores de la partida: con más cocineros llegan más clientes. */
-  crowd = 1;
-
   private nextId = 1;
-  private spawnTimer = 1;
+  private spawnTimer: number;
   private events: SimEvent[] = [];
 
   constructor(
-    readonly recipes: string[] = STARTER_RECIPES,
+    /** Ritmo de la ronda: depende del nivel y de cuántos jugáis. */
+    readonly params: LevelParams = levelParams(1, 1),
     private readonly random: () => number = Math.random,
   ) {
+    this.turnDuration = params.duration;
+    this.level = params.level;
+    this.goal = params.goal;
+    // El primer cliente llega enseguida.
+    this.spawnTimer = 2;
     this.kitchen = parseKitchen();
     for (const row of this.kitchen.tiles) {
       for (const t of row) {
@@ -428,10 +432,8 @@ export class KitchenSim {
     if (this.orders.length === 0) this.spawnTimer = Math.min(this.spawnTimer, 2);
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
-      if (this.orders.length < CONFIG.maxOrders) this.spawnOrder();
-      // Cada cocinero extra trae un 12 % más de clientes.
-      this.spawnTimer =
-        lerp(CONFIG.spawnIntervalStart, CONFIG.spawnIntervalEnd, this.progress) / (1 + 0.12 * (this.crowd - 1));
+      if (this.orders.length < this.params.maxOrders) this.spawnOrder();
+      this.spawnTimer = lerp(this.params.spawnStart, this.params.spawnEnd, this.progress);
     }
 
     if (this.reputation <= 0) this.finish('reputation');
@@ -442,6 +444,8 @@ export class KitchenSim {
     return {
       time: this.time,
       turnDuration: this.turnDuration,
+      level: this.level,
+      goal: this.goal,
       money: this.money,
       reputation: this.reputation,
       ended: this.ended,
@@ -461,6 +465,8 @@ export class KitchenSim {
   applySnapshot(s: SimSnapshot, localId?: string): void {
     this.time = s.time;
     this.turnDuration = s.turnDuration;
+    this.level = s.level;
+    this.goal = s.goal;
     this.money = s.money;
     this.reputation = s.reputation;
     this.ended = s.ended;
@@ -629,14 +635,20 @@ export class KitchenSim {
     const free = CUSTOMER_SLOTS_X.map((_, i) => i).filter((i) => !used.has(i));
     if (free.length === 0) return;
     const slot = free[Math.floor(this.random() * free.length)];
-    const recipeId = this.recipes[Math.floor(this.random() * this.recipes.length)];
+    const { recipes } = this.params;
+    // Una receta recién estrenada (hace 2 niveles o menos) sale algo más, para que se note la novedad.
+    const fresh = recipes[recipes.length - 1];
+    const isFresh = recipes.length > 1 && RECIPE_LEVEL[fresh] >= this.level - 2;
+    const recipeId =
+      isFresh && this.random() < 0.25 ? fresh : recipes[Math.floor(this.random() * recipes.length)];
     const layers = getRecipe(recipeId).layers.length;
-    const sideChance = lerp(CONFIG.sideChanceStart, CONFIG.sideChanceEnd, this.progress);
+    const sideChance = this.params.sideChance;
     const fries = this.random() < sideChance;
     const drink: Flavor | null = this.random() < sideChance ? (this.random() < 0.5 ? 'cola' : 'naranja') : null;
     const sides = (fries ? 1 : 0) + (drink ? 1 : 0);
     const maxPatience =
       (CONFIG.patienceBase + layers * CONFIG.patiencePerLayer + sides * CONFIG.patiencePerSide) *
+      this.params.patience *
       lerp(1, 0.85, this.progress);
     const order: Order = {
       id: this.nextId++,

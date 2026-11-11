@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ROLE_NAMES, ROLES, type Role, type RoomInfo } from '@hora-punta/shared';
+import { formatDuration, getRecipe, levelParams, newRecipesAt, ROLE_NAMES, ROLES, type Role, type RoomInfo } from '@hora-punta/shared';
 import { getIdentity, isInDiscord } from '../discord';
 import { net, saveName, savedName } from '../net';
 import { CHEF_COLORS, chefKey } from '../pixel/sprites';
@@ -143,6 +143,33 @@ export class LobbyScene extends Phaser.Scene {
     });
     y += 46 * s;
 
+    // Nivel: se puede elegir cualquiera de los ya desbloqueados.
+    const lp = levelParams(info.nivel, info.modo);
+    const arrowW = 48 * s;
+    const lvY = y + 20 * s;
+    new Button(this, W / 2 - 130 * s, lvY, {
+      w: arrowW,
+      h: 40 * s,
+      color: info.nivel > 1 ? COLORS.blue : 0x6b5a4a,
+      label: '◀',
+      fontSize: 18 * s,
+      onPress: () => info.nivel > 1 && net.setNivel(info.nivel - 1),
+    });
+    new Button(this, W / 2 + 130 * s, lvY, {
+      w: arrowW,
+      h: 40 * s,
+      color: info.nivel < info.desbloqueado ? COLORS.blue : 0x6b5a4a,
+      label: '▶',
+      fontSize: 18 * s,
+      onPress: () => info.nivel < info.desbloqueado && net.setNivel(info.nivel + 1),
+    });
+    txt(this, W / 2, lvY, `Nivel ${info.nivel}`, 26 * s, { color: '#ffc93c', stroke: '#2b1d14', strokeThickness: 5 * s }).setOrigin(0.5);
+    y += 44 * s;
+    const fresh = newRecipesAt(info.nivel).map((id) => getRecipe(id).name);
+    const lvInfo = `Objetivo: ${lp.goal} pedidos en ${formatDuration(lp.duration)}${fresh.length ? ` · nueva: ${fresh.join(', ')}` : ''}`;
+    txt(this, W / 2, y, lvInfo, 13 * s, { color: '#fff4dcbb', align: 'center', wordWrap: { width: W - 30 } }).setOrigin(0.5, 0);
+    y += 24 * s;
+
     const missing = info.modo - info.members.length;
     if (missing > 0) {
       txt(this, W / 2, y, `Esperando a ${missing} ${missing === 1 ? 'jugador' : 'jugadores'} más…`, 15 * s, { color: '#ffc93c' }).setOrigin(0.5, 0);
@@ -230,7 +257,7 @@ export class LobbyScene extends Phaser.Scene {
       w: btnW,
       h: 56 * s,
       color: ready ? COLORS.green : 0x8a8a8a,
-      label: '¡Empezar turno!',
+      label: `¡Empezar nivel ${info.nivel}!`,
       fontSize: 20 * s,
       onPress: () => ready && net.start(),
     });

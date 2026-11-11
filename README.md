@@ -2,9 +2,9 @@
 
 Juego cooperativo de hamburguesería en **pixel art** para jugar con amigos como **Actividad de Discord**.
 De 1 a 4 cocineros se mueven por la cocina de *Mordiscos Mandarina* (una hamburguesería inventada)
-durante turnos de 3 minutos: cajas de ingredientes, plancha, freidora, bebidas, mesa de montaje y pase.
+a lo largo de 20 niveles cada vez más rápidos: cajas de ingredientes, plancha, freidora, bebidas, mesa de montaje y pase.
 
-> **Estado actual: Fase 3**: multijugador en el navegador y como Actividad de Discord.
+> **Estado actual: Fase 4 (en curso)**: 20 niveles de dificultad creciente, en el navegador y como Actividad de Discord.
 
 ## Requisitos
 
@@ -205,6 +205,26 @@ Las cajas de ingredientes, las encimeras y la basura son de todos. Para pasar al
 delante de él y pulsa acción (tiene que tener las manos libres), o déjalo en una encimera.
 Quien entra a mitad de turno ayuda sin puesto hasta el siguiente; si alguien se va, sus puestos pasan a otro.
 
+### Niveles
+
+Hay **20 niveles**. Cada ronda tiene un **objetivo de pedidos servidos**: si lo cumplís (sin quedaros sin
+reputación) pasáis al siguiente; si no, se repite. Las estrellas (1-3) dependen de cuánto superéis el objetivo.
+
+| | Nivel 1 | Nivel 10 | Nivel 20 |
+|---|---|---|---|
+| Duración de la ronda | 1 min 30 s | 2 min 15 s | 3 min |
+| Paciencia de los clientes | ×2 | ×1,5 | ×0,85 |
+| Clientes a la vez (máx.) | 2 | 3-4 | 5 |
+| Patatas / bebida | nunca | 41 % | 75 % |
+
+- **Recetas nuevas** al subir: El Jardín (nivel 5, tomate), La Ahumada (8, bacon), Doble Trueno (11) y El Monstruo (14).
+  La Huertana aparece en el nivel 3; en los dos primeros solo se pide La Chispa.
+- **Según cuántos sois**: con más cocineros llegan más clientes (×1,4 con 2, ×1,75 con 3, ×2 con 4) y el objetivo
+  es mayor; jugando solo los clientes tienen un 15 % más de paciencia.
+- El progreso se guarda en tu navegador. Una sala puede jugar hasta el nivel más alto que tenga desbloqueado
+  cualquiera de los que entran, y en la sala se puede elegir cualquier nivel ya desbloqueado (◀ ▶).
+- Todos los números están en `shared/src/levels.ts`, para ajustarlos fácilmente.
+
 ### Pedidos
 
 1. Con 2 o más jugadores, los clientes llegan a la calle con un bocadillo «…»: **la caja tiene que tomarles
@@ -214,7 +234,7 @@ Quien entra a mitad de turno ayuda sin puesto hasta el siguiente; si alguien se 
 3. Cada cliente tiene un número, y su comanda con ese número aparece arriba con la paciencia que le queda.
 
 - Pedido completo con más de la mitad de paciencia = **perfecto** + propina.
-- Entregar algo que nadie ha pedido: −3 💰 y −5 ⭐. Cliente que se va: −2 💰 y −8 ⭐. Si la reputación llega a 0, se acaba el turno.
+- Entregar algo que nadie ha pedido: −3 💰 y −5 ⭐. Cliente que se va: −2 💰 y −8 ⭐. Si la reputación llega a 0, se acaba la ronda (y no se pasa de nivel).
 - Al final, el resumen muestra lo que ha hecho cada uno (notas, entregas, fogones, capas, fallos) y el **MVP**.
 
 **Controles**
@@ -257,4 +277,5 @@ Variables de entorno: ver `.env.example` (`VITE_DISCORD_CLIENT_ID`, `DISCORD_CLI
 1. ✅ Cocina pixel art: plancha, freidora, bebidas, montaje y pase; 2 recetas (escritorio y móvil)
 2. ✅ Multijugador con Colyseus: sala, puestos por jugador, tomar nota, pasarse cosas, resumen con MVP
 3. ✅ Actividad de Discord: login, nombre y avatar, una partida por canal de voz, guía de portal, túnel y despliegue
-4. ⏳ Tienda de mejoras, eventos aleatorios, stock de ingredientes, 6 recetas (tomate y bacon), 5 turnos, sonido y pulido visual
+4. ⏳ ✅ 20 niveles con dificultad creciente según el número de jugadores y 6 recetas (tomate y bacon).
+   Pendiente: tienda de mejoras, eventos aleatorios, stock de ingredientes, sonido y pulido visual

@@ -85,7 +85,7 @@ export class LobbyScene extends Phaser.Scene {
       this.status = '';
     } catch (err) {
       console.error(err);
-      this.status = `No se pudo conectar: ${err instanceof Error ? err.message : err}`;
+      this.status = `No se pudo conectar.\n${explainError(err)}`;
       this.build();
     }
   }
@@ -277,4 +277,28 @@ export class LobbyScene extends Phaser.Scene {
       }).setOrigin(0.5, 0);
     }
   }
+}
+
+/**
+ * Explica un fallo de conexión. Por HTTP/2 (Railway, Cloudflare…) el mensaje de error suele llegar vacío,
+ * así que nos fijamos en el código.
+ */
+function explainError(err: unknown): string {
+  const e = err as { code?: number | string; message?: string; name?: string };
+  const code = e?.code;
+  const msg = (e?.message ?? String(err ?? '')).trim();
+  if (code === 404 || code === 405) {
+    return `Error ${code}: en esta dirección está la página del juego, pero no el servidor multijugador. ` +
+      'En el hosting hay que arrancarlo con «npm start» (mira «Publicarlo en Railway» en el README).';
+  }
+  if (code === 502 || code === 503 || code === 504) {
+    return `Error ${code}: el servidor no responde (¿se está desplegando o se ha caído?). Prueba en un minuto.`;
+  }
+  if (code === 401) return msg || 'Error 401: no se pudo verificar tu cuenta de Discord.';
+  if (typeof code === 'number' && code >= 4000) return `La conexión en tiempo real se cerró (código ${code}). ${msg}`;
+  if (code === 1006 || /websocket/i.test(msg)) {
+    return 'No se pudo abrir la conexión en tiempo real (WebSocket). Revisa que el hosting permita WebSockets.';
+  }
+  if (/fetch|network|ECONNREFUSED/i.test(msg)) return 'No se llega al servidor. Revisa la conexión o la dirección.';
+  return `${msg || 'Error desconocido'}${code !== undefined ? ` (código ${code})` : ''}`;
 }

@@ -72,3 +72,9 @@ export function drawBackground(scene: Phaser.Scene): Phaser.GameObjects.Graphics
   for (let y = 0; y < height; y += s) for (let x = (y / s) % 2 ? s : 0; x < width; x += s * 2) g.fillRect(x, y, s, s);
   return g;
 }
+
+/** La escena está creándose o en marcha (no apagada): se puede dibujar en ella. */
+export function sceneAlive(scene: Phaser.Scene): boolean {
+  const st = scene.sys.settings.status;
+  return st >= Phaser.Scenes.CREATING && st < Phaser.Scenes.SHUTDOWN;
+}

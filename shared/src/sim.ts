@@ -13,24 +13,23 @@ import {
   type Tile,
   type TileKind,
 } from './kitchen';
-import { getRecipe, STARTER_RECIPES, type Ingredient } from './recipes';
+import { levelParams, RECIPE_LEVEL, type LevelParams } from './levels';
+import { perkCount } from './perks';
+import { EXTRA_GRILL } from './shop';
+import { DEFAULT_LOOK, type ChefLook } from './looks';
+import { getRecipe, type Ingredient } from './recipes';
 
 export const CONFIG = {
-  turnDuration: 180,
-  maxOrders: CUSTOMER_SLOTS_X.length,
   maxStack: 12,
   startReputation: 50,
   maxReputation: 100,
-  /** Segundos entre pedidos al principio y al final del turno. */
-  spawnIntervalStart: 14,
-  spawnIntervalEnd: 8,
-  /** Paciencia = base + segundos por capa y por acompañamiento; se reduce un 15 % hacia el final. */
+  /**
+   * Paciencia = (base + segundos por capa y por acompañamiento) × la del nivel;
+   * se reduce un 15 % hacia el final de la ronda. El ritmo de clientes lo marca el nivel (levels.ts).
+   */
   patienceBase: 40,
   patiencePerLayer: 6,
   patiencePerSide: 12,
-  /** Probabilidad de que un pedido lleve patatas / bebida, al principio y al final del turno. */
-  sideChanceStart: 0.3,
-  sideChanceEnd: 0.7,
   friesPrice: 3,
   drinkPrice: 2,
   perfectThreshold: 0.5,
@@ -89,6 +88,9 @@ export interface Station {
   item: Item | null;
   /** Segundos que lleva lo ya cocinado en la plancha o la freidora (para saber cuándo se quema). */
   overcook: number;
+  /** Velocidad de cocinado/llenado y aguante antes de quemarse, según las habilidades de quien lo puso. */
+  rate: number;
+  burnRate: number;
 }
 
 export interface Player {
@@ -105,6 +107,10 @@ export interface Player {
   inputY: number;
   holding: Item | null;
   roles: Role[];
+  /** Mini-habilidades de la partida (perks.ts); las repetidas suman. */
+  perks: string[];
+  /** Delantal y accesorio. */
+  look: ChefLook;
 }
 
 /** Contribución de cada jugador, para elegir al MVP del turno. */
@@ -162,7 +168,7 @@ export type SimEvent =
   | { type: 'trash'; cost: number; x: number; y: number }
   | { type: 'cooked'; x: number; y: number }
   | { type: 'filled'; x: number; y: number }
-  | { type: 'burnt'; x: number; y: number; what: 'carne' | 'patatas' }
+  | { type: 'burnt'; x: number; y: number; what: 'carne' | 'patatas'; cost: number }
   | { type: 'end'; reason: EndReason };
 
 export type EndReason = 'time' | 'reputation';
@@ -171,6 +177,8 @@ export type EndReason = 'time' | 'reputation';
 export interface SimSnapshot {
   time: number;
   turnDuration: number;
+  level: number;
+  goal: number;
   money: number;
   reputation: number;
   ended: boolean;
@@ -195,30 +203,44 @@ export class KitchenSim {
   stats: TurnStats = { served: 0, perfect: 0, wrong: 0, lost: 0, burnt: 0, trashed: 0, tips: 0, earned: 0 };
   ended = false;
   endReason: EndReason | null = null;
-  /** Duración del turno en segundos (se puede acortar para pruebas). */
-  turnDuration = CONFIG.turnDuration;
+  /** Duración de la ronda en segundos (se puede acortar para pruebas). */
+  turnDuration: number;
+  level: number;
+  /** Pedidos que hay que servir para pasar de nivel. */
+  goal: number;
   playerStats: Record<string, PlayerStats> = {};
 
   /** En el servidor no se mueve a nadie: cada cliente manda la posición de su cocinero. */
   moveOnTick = true;
   /** Si hace falta que la caja tome nota (no en el modo de un jugador). */
   needsCaja = true;
-  /** Jugadores de la partida: con más cocineros llegan más clientes. */
-  crowd = 1;
-
+  /** Fallos ya perdonados por Disculpa a tiempo en esta ronda, por jugador. */
+  private forgiven: Record<string, number> = {};
   private nextId = 1;
-  private spawnTimer = 1;
+  private spawnTimer: number;
   private events: SimEvent[] = [];
 
   constructor(
-    readonly recipes: string[] = STARTER_RECIPES,
+    /** Ritmo de la ronda: depende del nivel y de cuántos jugáis. */
+    readonly params: LevelParams = levelParams(1, 1),
     private readonly random: () => number = Math.random,
+    /** Mejoras de la tienda compradas en esta partida (shop.ts). */
+    readonly upgrades: readonly string[] = [],
   ) {
+    this.turnDuration = params.duration;
+    this.level = params.level;
+    this.goal = params.goal;
+    // El primer cliente llega enseguida.
+    this.spawnTimer = 2;
     this.kitchen = parseKitchen();
+    if (upgrades.includes('plancha3')) {
+      const t = this.kitchen.tiles[EXTRA_GRILL.y][EXTRA_GRILL.x];
+      t.kind = 'grill';
+    }
     for (const row of this.kitchen.tiles) {
       for (const t of row) {
         if (t.kind !== 'outside' && t.kind !== 'floor' && t.kind !== 'wall' && t.kind !== 'crate') {
-          this.stations.set(key(t.x, t.y), { item: null, overcook: 0 });
+          this.stations.set(key(t.x, t.y), { item: null, overcook: 0, rate: 1, burnRate: 1 });
         }
       }
     }
@@ -243,7 +265,7 @@ export class KitchenSim {
 
   // ------------------------------------------------------------ jugadores
 
-  addPlayer(id: string, name: string, color: number, roles: Role[] = ROLES): Player {
+  addPlayer(id: string, name: string, color: number, roles: Role[] = ROLES, perks: string[] = [], look: ChefLook = DEFAULT_LOOK): Player {
     const spawn = PLAYER_SPAWNS[color % PLAYER_SPAWNS.length];
     const p: Player = {
       id,
@@ -257,6 +279,8 @@ export class KitchenSim {
       inputY: 0,
       holding: null,
       roles: [...roles],
+      perks: [...perks],
+      look: { ...look },
     };
     this.players.set(id, p);
     this.playerStats[id] ??= { taken: 0, delivered: 0, cooked: 0, assembled: 0, mistakes: 0 };
@@ -278,7 +302,7 @@ export class KitchenSim {
     p.fy = p.fx !== 0 ? 0 : Math.sign(fy) || 1;
     p.inputX = moving ? 1 : 0;
     p.inputY = 0;
-    const maxStep = CONFIG.playerSpeed * Math.max(dt, 0.05) * 1.5 + 0.25;
+    const maxStep = speedOf(p) * Math.max(dt, 0.05) * 1.5 + 0.25;
     if (Math.hypot(x - p.x, y - p.y) > maxStep || this.blocked(x, y, CONFIG.playerRadius - 0.02)) return false;
     p.x = x;
     p.y = y;
@@ -327,8 +351,20 @@ export class KitchenSim {
     }
 
     if (t.kind === 'crate') {
-      if (!held) p.holding = crateItem(t.crate!);
-      else if (held.kind === 'food' && held.layers.length === 1 && held.layers[0] === t.crate) p.holding = null;
+      const c = t.crate!;
+      if (!held) p.holding = crateItem(c);
+      else if (held.kind === 'food' && held.layers.length === 1 && held.layers[0] === c) p.holding = null;
+      // Bandeja: con comida en las manos, el ingrediente se apila encima.
+      else if (
+        held.kind === 'food' &&
+        has(p, 'bandeja') &&
+        c !== 'carne_cruda' &&
+        c !== 'patatas' &&
+        held.layers.length < CONFIG.maxStack
+      ) {
+        held.layers.push(c);
+        st0.assembled++;
+      }
       return;
     }
 
@@ -351,6 +387,10 @@ export class KitchenSim {
           const next = this.orders.filter((o) => !o.taken).sort((a, b) => a.id - b.id)[0];
           if (next) {
             next.taken = true;
+            // Labia: el cliente al que tomas nota espera más.
+            const extra = 1 + 0.2 * perkCount(p.perks, 'labia');
+            next.patience *= extra;
+            next.maxPatience *= extra;
             st0.taken++;
             this.events.push({ type: 'taken', orderId: next.id, slot: next.slot });
           }
@@ -365,6 +405,11 @@ export class KitchenSim {
         } else if (held?.kind === (t.kind === 'grill' ? 'raw' : 'potatoes') && !st.item) {
           st.item = held;
           st.overcook = 0;
+          const grill = t.kind === 'grill';
+          st.rate =
+            (1 + 0.25 * perkCount(p.perks, grill ? 'vuelta' : 'aceite')) *
+            (this.upgrades.includes(grill ? 'parrilla' : 'freidora') ? (grill ? 1.2 : 1.3) : 1);
+          st.burnRate = (1 + 0.6 * perkCount(p.perks, 'termometro')) * (this.upgrades.includes('extintor') ? 1.3 : 1);
           p.holding = null;
           st0.cooked++;
         }
@@ -374,6 +419,7 @@ export class KitchenSim {
         // Con las manos vacías: se pone un vaso a llenar, y cuando está lleno se recoge.
         if (!held && !st.item) {
           st.item = { kind: 'drink', flavor: t.flavor!, fill: 0 };
+          st.rate = (1 + 0.35 * perkCount(p.perks, 'grifo')) * (this.upgrades.includes('dispensador') ? 1.4 : 1);
           st0.cooked++;
         }
         else if (!held && st.item?.kind === 'drink' && st.item.fill >= 1) {
@@ -428,10 +474,8 @@ export class KitchenSim {
     if (this.orders.length === 0) this.spawnTimer = Math.min(this.spawnTimer, 2);
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
-      if (this.orders.length < CONFIG.maxOrders) this.spawnOrder();
-      // Cada cocinero extra trae un 12 % más de clientes.
-      this.spawnTimer =
-        lerp(CONFIG.spawnIntervalStart, CONFIG.spawnIntervalEnd, this.progress) / (1 + 0.12 * (this.crowd - 1));
+      if (this.orders.length < this.params.maxOrders) this.spawnOrder();
+      this.spawnTimer = lerp(this.params.spawnStart, this.params.spawnEnd, this.progress);
     }
 
     if (this.reputation <= 0) this.finish('reputation');
@@ -442,6 +486,8 @@ export class KitchenSim {
     return {
       time: this.time,
       turnDuration: this.turnDuration,
+      level: this.level,
+      goal: this.goal,
       money: this.money,
       reputation: this.reputation,
       ended: this.ended,
@@ -461,6 +507,8 @@ export class KitchenSim {
   applySnapshot(s: SimSnapshot, localId?: string): void {
     this.time = s.time;
     this.turnDuration = s.turnDuration;
+    this.level = s.level;
+    this.goal = s.goal;
     this.money = s.money;
     this.reputation = s.reputation;
     this.ended = s.ended;
@@ -506,7 +554,7 @@ export class KitchenSim {
       p.fy = Math.sign(iy);
     }
     const r = CONFIG.playerRadius;
-    const step = CONFIG.playerSpeed * dt;
+    const step = speedOf(p) * dt;
 
     // Cada eje por separado, para poder deslizarse pegado a las encimeras.
     const nx = p.x + ix * step;
@@ -537,14 +585,14 @@ export class KitchenSim {
       const kind = this.tile(x, y)?.kind;
 
       if (kind === 'drinks' && item.kind === 'drink' && item.fill < 1) {
-        item.fill = Math.min(1, item.fill + dt / CONFIG.fillTime);
+        item.fill = Math.min(1, item.fill + (dt * st.rate) / CONFIG.fillTime);
         if (item.fill >= 1) this.events.push({ type: 'filled', x, y });
         continue;
       }
       if (kind !== 'grill' && kind !== 'fryer') continue;
       const grill = kind === 'grill';
-      const cookTime = grill ? CONFIG.cookTime : CONFIG.fryTime;
-      const burnTime = grill ? CONFIG.burnTime : CONFIG.fryBurnTime;
+      const cookTime = (grill ? CONFIG.cookTime : CONFIG.fryTime) / st.rate;
+      const burnTime = (grill ? CONFIG.burnTime : CONFIG.fryBurnTime) * st.burnRate;
 
       if (item.kind === 'raw' || item.kind === 'potatoes') {
         item.cook += dt;
@@ -558,9 +606,10 @@ export class KitchenSim {
         if (st.overcook >= burnTime) {
           const what = grill ? 'carne' : 'patatas';
           st.item = { kind: 'burnt', what };
-          this.money -= CONFIG.burnCost;
+          const cost = this.upgrades.includes('extintor') ? 0 : CONFIG.burnCost;
+          this.money -= cost;
           this.stats.burnt++;
-          this.events.push({ type: 'burnt', x, y, what });
+          this.events.push({ type: 'burnt', x, y, what, cost });
         }
       }
     }
@@ -588,6 +637,16 @@ export class KitchenSim {
     }
 
     if (!order) {
+      // Disculpa a tiempo: los primeros fallos de la ronda (uno por cada vez que se cogió) no cuestan nada.
+      const p = this.players.get(by);
+      const forgiven = this.forgiven[by] ?? 0;
+      if (p && forgiven < perkCount(p.perks, 'disculpa')) {
+        this.forgiven[by] = forgiven + 1;
+        this.stats.wrong++;
+        this.playerStats[by].mistakes++;
+        this.events.push({ type: 'wrong', penalty: 0, x: at.x, y: at.y });
+        return true;
+      }
       this.money -= CONFIG.wrongMoneyPenalty;
       this.reputation -= CONFIG.wrongRepPenalty;
       this.stats.wrong++;
@@ -599,6 +658,10 @@ export class KitchenSim {
 
     order.done[part] = true;
     this.playerStats[by].delivered++;
+    // Simpatía: cada parte entregada devuelve algo de paciencia.
+    const giver = this.players.get(by);
+    const charm = giver ? perkCount(giver.perks, 'simpatia') : 0;
+    if (charm) order.patience = Math.min(order.maxPatience, order.patience + 0.12 * charm * order.maxPatience);
     this.events.push({ type: 'part', orderId: order.id, slot: order.slot, part });
     if (order.done.burger && (!order.fries || order.done.fries) && (!order.drink || order.done.drink)) {
       this.complete(order);
@@ -612,7 +675,7 @@ export class KitchenSim {
     const ratio = order.patience / order.maxPatience;
     const perfect = ratio >= CONFIG.perfectThreshold;
     const earned = Math.round(price * (0.6 + 0.4 * ratio));
-    const tip = perfect ? Math.ceil(price * 0.3) : 0;
+    const tip = perfect ? Math.ceil(price * 0.3) * (this.upgrades.includes('tarro') ? 2 : 1) : 0;
 
     this.orders = this.orders.filter((o) => o !== order);
     this.money += earned + tip;
@@ -629,14 +692,21 @@ export class KitchenSim {
     const free = CUSTOMER_SLOTS_X.map((_, i) => i).filter((i) => !used.has(i));
     if (free.length === 0) return;
     const slot = free[Math.floor(this.random() * free.length)];
-    const recipeId = this.recipes[Math.floor(this.random() * this.recipes.length)];
+    const { recipes } = this.params;
+    // Una receta recién estrenada (hace 2 niveles o menos) sale algo más, para que se note la novedad.
+    const fresh = recipes[recipes.length - 1];
+    const isFresh = recipes.length > 1 && RECIPE_LEVEL[fresh] >= this.level - 2;
+    const recipeId =
+      isFresh && this.random() < 0.25 ? fresh : recipes[Math.floor(this.random() * recipes.length)];
     const layers = getRecipe(recipeId).layers.length;
-    const sideChance = lerp(CONFIG.sideChanceStart, CONFIG.sideChanceEnd, this.progress);
+    const sideChance = this.params.sideChance;
     const fries = this.random() < sideChance;
     const drink: Flavor | null = this.random() < sideChance ? (this.random() < 0.5 ? 'cola' : 'naranja') : null;
     const sides = (fries ? 1 : 0) + (drink ? 1 : 0);
     const maxPatience =
       (CONFIG.patienceBase + layers * CONFIG.patiencePerLayer + sides * CONFIG.patiencePerSide) *
+      this.params.patience *
+      (this.upgrades.includes('terraza') ? 1.15 : 1) *
       lerp(1, 0.85, this.progress);
     const order: Order = {
       id: this.nextId++,
@@ -666,6 +736,15 @@ function crateItem(c: CrateContent): Item {
   if (c === 'carne_cruda') return { kind: 'raw', cook: 0 };
   if (c === 'patatas') return { kind: 'potatoes', cook: 0 };
   return { kind: 'food', layers: [c] };
+}
+
+function has(p: Player, id: Parameters<typeof perkCount>[1]): boolean {
+  return p.perks.includes(id);
+}
+
+/** Velocidad al andar, con Zapatillas rápidas. */
+export function speedOf(p: Player): number {
+  return CONFIG.playerSpeed * (1 + 0.12 * perkCount(p.perks ?? [], 'zapatillas'));
 }
 
 function key(x: number, y: number): string {

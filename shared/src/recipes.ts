@@ -31,9 +31,6 @@ export const RECIPES: Recipe[] = [
   { id: 'monstruo', name: 'El Monstruo', layers: ['pan', 'carne', 'bacon', 'queso', 'carne', 'pan'], price: 12 },
 ];
 
-/** Recetas disponibles desde el principio. El resto se desbloquean en la tienda (fase 4). */
-export const STARTER_RECIPES = ['chispa', 'huertana'];
-
 const RECIPE_BY_ID = new Map(RECIPES.map((r) => [r.id, r]));
 
 export function getRecipe(id: string): Recipe {

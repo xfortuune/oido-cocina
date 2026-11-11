@@ -1,11 +1,17 @@
 import Phaser from 'phaser';
 import '@fontsource/pixelify-sans/400.css';
 import '@fontsource/pixelify-sans/700.css';
+import { audio } from './audio';
 import { net } from './net';
+import { startPresence } from './presence';
+import { LookScene } from './scenes/LookScene';
 import { HudScene } from './scenes/HudScene';
 import { KitchenScene } from './scenes/KitchenScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { MenuScene } from './scenes/MenuScene';
+import { PerkScene } from './scenes/PerkScene';
+import { RankingScene } from './scenes/RankingScene';
+import { ShopScene } from './scenes/ShopScene';
 import { SummaryScene } from './scenes/SummaryScene';
 
 async function start(): Promise<void> {
@@ -27,8 +33,13 @@ async function start(): Promise<void> {
     // Los avatares vienen de cdn.discordapp.com: hace falta CORS para usarlos como textura.
     loader: { crossOrigin: 'anonymous' },
     // El orden importa: el HUD se dibuja encima de la cocina.
-    scene: [MenuScene, LobbyScene, KitchenScene, HudScene, SummaryScene],
+    scene: [MenuScene, LobbyScene, KitchenScene, HudScene, SummaryScene, PerkScene, ShopScene, RankingScene, LookScene],
   });
+  startPresence();
+  // El navegador solo deja sonar tras el primer toque o tecla.
+  const unlock = () => audio.unlock();
+  window.addEventListener('pointerdown', unlock);
+  window.addEventListener('keydown', unlock);
   // Solo en desarrollo: acceso desde la consola para depurar.
   if (import.meta.env.DEV) Object.assign(window, { horaPunta: game, horaPuntaNet: net });
 }

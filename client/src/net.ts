@@ -2,7 +2,11 @@
 import Phaser from 'phaser';
 import { Client, type Room } from '@colyseus/sdk';
 import {
+  cleanLook,
+  DEFAULT_LOOK,
   ROOM_NAME,
+  type ChefLook,
+  type EmoteMessage,
   type InputMessage,
   type JoinOptions,
   type LobbyMember,
@@ -50,10 +54,12 @@ class Net extends Phaser.Events.EventEmitter {
       secure,
       pathname: import.meta.env.DEV ? '/colyseus' : '',
     });
-    const room = await client.joinOrCreate(ROOM_NAME, options);
+    const room = await client.joinOrCreate(ROOM_NAME, { ...options, look: options.look ?? savedLook() });
     this.room = room;
     room.onMessage('room', (info: RoomInfo) => {
       this.info = info;
+      // Fuera de la cocina la última instantánea ya no vale (sería de la ronda anterior).
+      if (info.phase !== 'playing') this.snapshot = null;
       this.emit('room', info);
     });
     room.onMessage('snap', (snap: SimSnapshot) => {
@@ -61,8 +67,11 @@ class Net extends Phaser.Events.EventEmitter {
       this.emit('snap', snap);
     });
     room.onMessage('events', (events: SimEvent[]) => this.emit('events', events));
+    room.onMessage('bought', (id: string) => this.emit('bought', id));
+    room.onMessage('emote', (msg: EmoteMessage) => this.emit('emote', msg));
     room.onMessage('summary', (summary: SummaryInfo) => {
       this.summary = summary;
+      saveRecord(summary.passed ? summary.level : summary.level - 1);
       this.emit('summary', summary);
     });
     room.onLeave(() => {
@@ -108,8 +117,25 @@ class Net extends Phaser.Events.EventEmitter {
     this.room?.send('start');
   }
 
+  /** Del resumen al vestíbulo (o a elegir habilidad, si toca). En solitario se sigue jugando directamente. */
   backToLobby(): void {
     this.room?.send('lobby');
+  }
+
+  pickPerk(id: string): void {
+    this.room?.send('perk', id);
+  }
+
+  buy(id: string): void {
+    this.room?.send('buy', id);
+  }
+
+  toggleReady(): void {
+    this.room?.send('ready');
+  }
+
+  emote(n: number): void {
+    this.room?.send('emote', n);
   }
 }
 
@@ -131,5 +157,41 @@ export function saveName(name: string): void {
     localStorage.setItem('horaPunta.name', name);
   } catch {
     // Sin almacenamiento: el nombre dura solo esta sesión.
+  }
+}
+
+/** Récord: el nivel más alto superado en este navegador. */
+export function savedRecord(): number {
+  try {
+    return Math.max(0, Number(localStorage.getItem('horaPunta.record')) || 0);
+  } catch {
+    return 0;
+  }
+}
+
+function saveRecord(nivel: number): void {
+  try {
+    if (nivel > savedRecord()) localStorage.setItem('horaPunta.record', String(nivel));
+  } catch {
+    // Sin almacenamiento: el progreso dura solo esta sesión.
+  }
+}
+
+/** Delantal y accesorio elegidos en este navegador. */
+export function savedLook(): ChefLook {
+  try {
+    const raw = localStorage.getItem('horaPunta.look');
+    if (raw) return cleanLook(JSON.parse(raw));
+  } catch {
+    // sin almacenamiento o dato corrupto
+  }
+  return { ...DEFAULT_LOOK };
+}
+
+export function saveLook(look: ChefLook): void {
+  try {
+    localStorage.setItem('horaPunta.look', JSON.stringify(look));
+  } catch {
+    // sin almacenamiento
   }
 }

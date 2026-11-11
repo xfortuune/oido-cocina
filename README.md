@@ -2,9 +2,9 @@
 
 Juego cooperativo de hamburguesería en **pixel art** para jugar con amigos como **Actividad de Discord**.
 De 1 a 4 cocineros se mueven por la cocina de *Mordiscos Mandarina* (una hamburguesería inventada)
-durante turnos de 3 minutos: cajas de ingredientes, plancha, freidora, bebidas, mesa de montaje y pase.
+a lo largo de 20 niveles cada vez más rápidos: cajas de ingredientes, plancha, freidora, bebidas, mesa de montaje y pase.
 
-> **Estado actual: Fase 3**: multijugador en el navegador y como Actividad de Discord.
+> **Estado actual: Fase 4 (en curso)**: 20 niveles de dificultad creciente, en el navegador y como Actividad de Discord.
 
 ## Requisitos
 
@@ -28,6 +28,7 @@ Arranca dos cosas a la vez:
 Desde el móvil, usa la dirección «Network» que muestra Vite (por ejemplo `http://192.168.1.50:5173/?sala=amigos`).
 
 **Turno corto para pruebas:** añade `&turno=20` (20 segundos). Lo decide quien crea la sala.
+Los bots también pueden empezar en otro nivel con la opción `nivel` (solo para pruebas).
 
 **Prueba automática con bots** (con `npm run dev` en marcha, en otra terminal):
 
@@ -35,7 +36,7 @@ Desde el móvil, usa la dirección «Network» que muestra Vite (por ejemplo `ht
 node scripts/prueba-bots.mjs
 ```
 
-Dos bots entran en una sala, se reparten los puestos, cocinan, toman nota, se pasan cosas y terminan un turno; el script marca cada paso con ✅ o ❌.
+Dos bots entran en una sala, se reparten los puestos, cocinan, toman nota, se pasan cosas y terminan un turno; luego un bot solo cocina dos hamburguesas, supera un nivel, elige habilidad, pasa por la tienda, pierde la siguiente ronda y entra en el ranking (tarda unos 2 minutos); el script marca cada paso con ✅ o ❌.
 
 ## Jugar en Discord (Actividad)
 
@@ -205,6 +206,94 @@ Las cajas de ingredientes, las encimeras y la basura son de todos. Para pasar al
 delante de él y pulsa acción (tiene que tener las manos libres), o déjalo en una encimera.
 Quien entra a mitad de turno ayuda sin puesto hasta el siguiente; si alguien se va, sus puestos pasan a otro.
 
+### Niveles
+
+Una partida es una escalada de **20 niveles**. Cada ronda tiene un **objetivo de pedidos servidos**: si lo cumplís
+(sin quedaros sin reputación) pasáis al siguiente. **Si no, se acaba la partida**: volvéis al nivel 1 sin habilidades.
+Las estrellas (1-3) dependen de cuánto superéis el objetivo. Cada navegador guarda su récord.
+
+| | Nivel 1 | Nivel 10 | Nivel 20 |
+|---|---|---|---|
+| Duración de la ronda | 1 min 30 s | 2 min 15 s | 3 min |
+| Paciencia de los clientes | ×2 | ×1,5 | ×0,85 |
+| Clientes a la vez (máx.) | 2 | 3-4 | 5 |
+| Patatas / bebida | nunca | 41 % | 75 % |
+
+- **Recetas nuevas** al subir: El Jardín (nivel 5, tomate), La Ahumada (8, bacon), Doble Trueno (11) y El Monstruo (14).
+  La Huertana aparece en el nivel 3; en los dos primeros solo se pide La Chispa.
+- **Según cuántos sois**: con más cocineros llegan más clientes (×1,4 con 2, ×1,75 con 3, ×2 con 4) y el objetivo
+  es mayor; jugando solo los clientes tienen un 15 % más de paciencia.
+- Todos los números están en `shared/src/levels.ts`, para ajustarlos fácilmente.
+
+### Mini-habilidades
+
+Cada **2 niveles superados** (tras el 2, el 4, el 6…), **cada cocinero elige una habilidad entre tres**, con
+preferencia por las que sirven para sus puestos. Le acompañan el resto de la partida; al perder una ronda se pierden todas.
+Si alguien sale de la sala y vuelve a entrar desde Discord, recupera las suyas.
+
+| Habilidad | Efecto | Máx. |
+|---|---|---|
+| Zapatillas rápidas | Te mueves un 12 % más rápido | ×2 |
+| Vuelta y vuelta | La carne que pones se hace un 25 % antes | ×2 |
+| Termómetro | Lo que pones en plancha o freidora tarda un 60 % más en quemarse | ×2 |
+| Aceite nuevo | Tus patatas se fríen un 25 % antes | ×2 |
+| Grifo a presión | Tus vasos se llenan un 35 % antes | ×2 |
+| Labia | Los clientes a los que tomas nota tienen un 20 % más de paciencia (no sale jugando solo) | ×2 |
+| Simpatía | Cada parte que entregas devuelve al cliente un 12 % de paciencia | ×2 |
+| Bandeja | Con comida en las manos, coger de una caja de ingredientes lo apila encima | ×1 |
+| Disculpa a tiempo | Tu primer fallo de cada ronda no cuesta reputación ni dinero | ×2 |
+| Clientela fiel | El equipo empieza cada ronda con 10 de reputación más | ×2 |
+
+Están definidas en `shared/src/perks.ts`. Durante la ronda, las tuyas aparecen debajo de tus puestos.
+
+### Tienda
+
+Tras cada nivel superado (y tras elegir habilidad, si toca) se abre la **tienda**. El dinero que ganáis en cada
+ronda va a una **caja común de la partida**, y cualquiera puede comprar **mejoras del local** que valen para todos.
+Se sigue cuando todos pulsan «Listo». Al perder una ronda se pierden el dinero y las mejoras.
+
+| Mejora | Efecto | Precio (1 jugador) |
+|---|---|---|
+| Tercera plancha | Una plancha más, debajo de la mesa de montaje | 45 |
+| Plancha de hierro | Toda la carne se hace un 20 % antes | 35 |
+| Freidora industrial | Todas las patatas se fríen un 30 % antes | 30 |
+| Dispensador doble | Todos los vasos se llenan un 40 % antes | 25 |
+| Terraza con sombrillas | Los clientes esperan un 15 % más | 40 |
+| Extintor | Lo quemado no cuesta dinero y todo tarda un 30 % más en quemarse | 25 |
+| Tarro de propinas | Las propinas valen el doble | 20 |
+| Reseñas de 5 estrellas | Cada ronda empieza con 15 de reputación más | 30 |
+
+Con más jugadores cuestan un 25 % más por jugador extra (también se gana más). Están en `shared/src/shop.ts`.
+
+### Fin de la partida y ranking
+
+Al perder (o al superar los 20 niveles) sale el **resumen de la partida**: niveles superados, hamburguesas,
+dinero, tiempo, las habilidades de cada uno, el MVP de toda la partida y el **ranking del grupo**. En Discord,
+el ranking es **por servidor**, así que se ve qué grupo de amigos llega más lejos. También se puede consultar desde
+el menú («Ranking»). El servidor lo guarda en `server/data/ranking.json` (o en la ruta de `RANKING_FILE`).
+
+### Social y Discord
+
+- **Invitar**: en Discord, la sala tiene un botón «Invitar» que abre el diálogo de Discord para llamar a tus amigos
+  a la Actividad (entran al canal de voz y a la misma cocina).
+- **Estado en tu perfil**: mientras jugáis, Discord muestra qué hacéis («Cocinando en el nivel 7 · 3 de 4 cocineros»,
+  «De compras en la tienda», «Partida terminada: 9 niveles»…) con cuántos sois, para que los amigos se apunten.
+  Para esto la Actividad pide el permiso `rpc.activities.write` (Discord lo pregunta una vez).
+- **Tu cocinero**: en el menú (o tocando al cocinero grande) eliges el **color del delantal** (8) y un **accesorio**
+  que se gana con tu récord: gorro de chef, gorra (2 niveles), pañuelo (4), bigote (6), gafas de sol (10) y corona (20).
+  Se guarda en el navegador y lo ven todos en la cocina, la sala y los resúmenes.
+- **Gestos rápidos**: «¡Oído!», «¡Ayuda!», «¡Marchando!» y «¡Gracias!» salen en un bocadillo encima de tu cocinero, con
+  su sonido. En el PC, teclas **1-4**; en el móvil, el icono del bocadillo entre el joystick y el botón. Útil para quien
+  no tiene micro.
+
+### Sonido
+
+Todo el sonido se genera en el navegador (Web Audio), sin archivos: marimba y campanillas suaves para coger,
+apilar (cada capa suena más aguda), entregar y cobrar; chisporroteo de la plancha y burbujeo de la freidora;
+avisos antes de que algo se queme; cuenta atrás en los últimos 10 segundos; y una música tranquila que se
+acelera en los últimos 30 segundos de la ronda. El altavoz (menú, tienda y cocina) cambia entre
+**música y sonido → solo efectos → silencio**, y se recuerda en cada navegador.
+
 ### Pedidos
 
 1. Con 2 o más jugadores, los clientes llegan a la calle con un bocadillo «…»: **la caja tiene que tomarles
@@ -214,7 +303,7 @@ Quien entra a mitad de turno ayuda sin puesto hasta el siguiente; si alguien se 
 3. Cada cliente tiene un número, y su comanda con ese número aparece arriba con la paciencia que le queda.
 
 - Pedido completo con más de la mitad de paciencia = **perfecto** + propina.
-- Entregar algo que nadie ha pedido: −3 💰 y −5 ⭐. Cliente que se va: −2 💰 y −8 ⭐. Si la reputación llega a 0, se acaba el turno.
+- Entregar algo que nadie ha pedido: −3 💰 y −5 ⭐. Cliente que se va: −2 💰 y −8 ⭐. Si la reputación llega a 0, se acaba la ronda (y no se pasa de nivel).
 - Al final, el resumen muestra lo que ha hecho cada uno (notas, entregas, fogones, capas, fallos) y el **MVP**.
 
 **Controles**
@@ -223,6 +312,7 @@ Quien entra a mitad de turno ayuda sin puesto hasta el siguiente; si alguien se 
 |---|---|---|
 | Moverse | WASD o flechas | Joystick (izquierda) |
 | Acción (coger, dejar, apilar, servir, tomar nota, pasar) | Espacio, E o Enter | Botón naranja (muestra la acción) |
+| Gestos rápidos | 1, 2, 3, 4 | Icono del bocadillo |
 
 ## Cómo funciona la red
 
@@ -250,11 +340,16 @@ scripts/  Prueba con bots.
 
 El plano de la cocina es un mapa de caracteres en `shared/src/kitchen.ts`: se puede rediseñar editando el texto.
 
-Variables de entorno: ver `.env.example` (`VITE_DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `SERVER_PORT`, `REQUIRE_DISCORD`, `DISCORD_TUNNEL`).
+Variables de entorno: ver `.env.example` (`VITE_DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `SERVER_PORT`, `REQUIRE_DISCORD`, `DISCORD_TUNNEL`, `RANKING_FILE`).
 
 ## Hoja de ruta
 
 1. ✅ Cocina pixel art: plancha, freidora, bebidas, montaje y pase; 2 recetas (escritorio y móvil)
 2. ✅ Multijugador con Colyseus: sala, puestos por jugador, tomar nota, pasarse cosas, resumen con MVP
 3. ✅ Actividad de Discord: login, nombre y avatar, una partida por canal de voz, guía de portal, túnel y despliegue
-4. ⏳ Tienda de mejoras, eventos aleatorios, stock de ingredientes, 6 recetas (tomate y bacon), 5 turnos, sonido y pulido visual
+4. ⏳ ✅ 20 niveles con dificultad creciente según el número de jugadores y 6 recetas (tomate y bacon).
+   ✅ Mini-habilidades cada 2 niveles; perder una ronda devuelve al nivel 1.
+   ✅ Tienda entre rondas, resumen final de la partida y ranking por servidor de Discord.
+   ✅ Sonido y música, vapor y humo, destellos al servir, clientes que sudan, confeti, comandas que tiemblan.
+   ✅ Invitar desde el juego, estado en Discord, delantal y accesorios, gestos rápidos.
+   Pendiente: eventos aleatorios, stock de ingredientes

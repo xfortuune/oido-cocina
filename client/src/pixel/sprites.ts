@@ -1,7 +1,7 @@
 // Pixel art de ¡Oído, Cocina!, generado en tiempo de carga a partir de mapas de caracteres.
 // Así no hace falta cargar imágenes (y en Discord no hay que mapear más URLs).
 import Phaser from 'phaser';
-import type { Flavor, Ingredient, Item, Tile } from '@hora-punta/shared';
+import { HATS, type ChefLook, type Flavor, type HatId, type Ingredient, type Item, type Tile } from '@hora-punta/shared';
 
 export const TILE = 16;
 
@@ -18,12 +18,16 @@ const BASE: Palette = {
   p: '#3b3b5c', // pantalón
 };
 
-/** Delantales de los cocineros (claro, oscuro). */
+/** Delantales de los cocineros (claro, oscuro). Los 4 primeros dan también el color de cada jugador. */
 export const CHEF_COLORS: [string, string][] = [
   ['#ff8a3d', '#d9651c'],
   ['#4fa3e0', '#2f74b0'],
   ['#5cc46a', '#37913f'],
   ['#c77de0', '#9450ad'],
+  ['#e5483a', '#b22f24'],
+  ['#ffc93c', '#d9a01c'],
+  ['#f28ac0', '#c45f93'],
+  ['#3cc8b4', '#23917f'],
 ];
 
 // ---------------------------------------------------------------- cocinero
@@ -70,6 +74,32 @@ const CHEF_SIDE = [
   '....kwwwaaak....',
   '....kAAAAAk.....',
 ];
+/** Cabeza según el accesorio (6 filas, encima de la cara). */
+const HEADWEAR: Record<HatId, { down: string[]; up: string[]; side: string[] }> = (() => {
+  const cap = (brim: string) => ['................', '................', '................', '.....kkkkkk.....', '....kaaaaaak....', brim];
+  const bandana = ['................', '................', '................', '.....kkkkkk.....', '....krrwrrrk....', '....krrrrwrk....'];
+  const crown = ['................', '................', '....y..yy..y....', '....yy.yy.yy....', '....yyyyyyyy....', '....kYYYYYYk....'];
+  const same = (rows: string[]) => ({ down: rows, up: rows, side: rows });
+  return {
+    gorro: same(CHEF_HAT),
+    bigote: same(CHEF_HAT),
+    gafas: same(CHEF_HAT),
+    gorra: { down: cap('...kAAAAAAAAk...'), up: cap('....kAAAAAAk....'), side: cap('....kAAAAAAkkk..') },
+    panuelo: { ...same(bandana), side: ['................', '................', '................', '.....kkkkkk.....', '...rkrrwrrrk....', '..r.krrrrwrk....'] },
+    corona: same(crown),
+  };
+})();
+
+/** Cambios en la cara (filas 6-9 de la cara) para bigote y gafas. */
+function face(rows: string[], hat: HatId, dir: 'down' | 'up' | 'side'): string[] {
+  const out = [...rows];
+  if (hat === 'bigote' && dir === 'down') out[8] = '....kshhhhsk....';
+  if (hat === 'bigote' && dir === 'side') out[8] = '....khssshhhk...';
+  if (hat === 'gafas' && dir === 'down') out[7] = '....kkwkkwkk....';
+  if (hat === 'gafas' && dir === 'side') out[7] = '....khssskkkk...';
+  return out;
+}
+
 const LEGS_FRONT = [
   ['....kpk..kpk....', '....kkk..kkk....'],
   ['...kpk...kpk....', '...kkk...kkk....'],
@@ -203,8 +233,10 @@ function rect(c: CanvasRenderingContext2D, color: string, x: number, y: number, 
   c.fillRect(x, y, w, h);
 }
 
-export function chefKey(color: number, dir: 'down' | 'up' | 'side', frame: number): string {
-  return `chef_${color}_${dir}_${frame}`;
+/** Textura de un cocinero: con un número, el delantal de ese color y el gorro de chef. */
+export function chefKey(look: ChefLook | number | undefined, dir: 'down' | 'up' | 'side', frame: number): string {
+  const l = typeof look === 'number' ? { apron: look, hat: 'gorro' } : (look ?? { apron: 0, hat: 'gorro' });
+  return `chef_${l.apron % CHEF_COLORS.length}_${l.hat}_${dir}_${frame}`;
 }
 
 export function customerKey(look: number): string {
@@ -239,13 +271,19 @@ export function drinkKey(flavor: Flavor): string {
 }
 
 export function generateTextures(scene: Phaser.Scene): void {
-  // Cocineros: 4 colores x 3 direcciones x 2 pasos.
-  CHEF_COLORS.forEach(([a, A], color) => {
-    const pal = { ...BASE, h: '#5a3a22', a, A };
-    for (const frame of [0, 1]) {
-      paint(scene, chefKey(color, 'down', frame), [...CHEF_DOWN, ...LEGS_FRONT[frame]], pal);
-      paint(scene, chefKey(color, 'up', frame), [...CHEF_UP, ...LEGS_FRONT[frame]], pal);
-      paint(scene, chefKey(color, 'side', frame), [...CHEF_SIDE, ...LEGS_SIDE[frame]], pal);
+  // Cocineros: 8 delantales x 6 accesorios x 3 direcciones x 2 pasos.
+  CHEF_COLORS.forEach(([a, A], apron) => {
+    const pal = { ...BASE, h: '#5a3a22', a, A, r: '#e5483a', y: '#ffd23f', Y: '#e0a800' };
+    for (const { id: hat } of HATS) {
+      const head = HEADWEAR[hat];
+      const look = { apron, hat };
+      for (const frame of [0, 1]) {
+        const body = (dir: 'down' | 'up' | 'side', rows: string[], legs: string[]) =>
+          paint(scene, chefKey(look, dir, frame), face([...head[dir], ...rows.slice(CHEF_HAT.length), ...legs], hat, dir), pal);
+        body('down', CHEF_DOWN, LEGS_FRONT[frame]);
+        body('up', CHEF_UP, LEGS_FRONT[frame]);
+        body('side', CHEF_SIDE, LEGS_SIDE[frame]);
+      }
     }
   });
 
@@ -378,6 +416,17 @@ function generateIcons(scene: Phaser.Scene): void {
   paint(scene, 'icon_star', ['...kk...', '..kyyk..', 'kkkyykkk', 'kyyyyyyk', '.kyyyyk.', '.kyyyyk.', 'kyykkyyk', 'kkk..kkk'], pal);
   paint(scene, 'icon_clock', ['..kkkk..', '.kbbbbk.', 'kbbbkbbk', 'kbbbkbbk', 'kbbbkkbk', 'kbbbbbbk', '.kbbbbk.', '..kkkk..'], pal);
   paint(scene, 'icon_burger', ['..kkkk..', '.kyyyyk.', 'kkkkkkkk', 'krrrrrrk', 'kkkkkkkk', '.kyyyyk.', '..kkkk..', '........'], { ...pal, y: '#e8a04a', r: '#7a3e1d' });
+  // Altavoz: con música, solo efectos, y en silencio.
+  const spk = ['....k....', '...kk....', 'kkkbk....', 'kbbbk....', 'kbbbk....', 'kkkbk....', '...kk....', '....k....'];
+  const withRight = (right: string[]) => spk.map((r, i) => r.slice(0, 5) + right[i]);
+  paint(scene, 'icon_sound_todo', withRight(['..y.', 'y..y', '.y.y', '.y.y', '.y.y', '.y.y', 'y..y', '..y.']), pal, 9);
+  paint(scene, 'icon_sound_efectos', withRight(['....', '.c..', '..c.', '..c.', '..c.', '..c.', '.c..', '....']), pal, 9);
+  paint(scene, 'icon_sound_nada', withRight(['....', 'r..r', '.rr.', '.rr.', 'r..r', '....', '....', '....']), pal, 9);
+  // Gotita de sudor (clientes impacientes) y destello (servir).
+  paint(scene, 'icon_chat', ['.kkkkkkk.', 'kbbbbbbbk', 'kbkbkbkbk', 'kbbbbbbbk', '.kkbkkkk.', '..kk.....'], pal, 9);
+  paint(scene, 'icon_sweat', ['.c.', 'ccc', 'cbc', '.c.'], pal);
+  paint(scene, 'icon_spark', ['..y..', '..y..', 'yybyy', '..y..', '..y..'], pal);
+  paint(scene, 'icon_confetti', ['yy', 'yy'], { y: '#ffffff' });
   paint(scene, 'icon_smoke', ['..gg..', '.gwwg.', 'gwwwwg', '.gwwg.', '..gg..'], BASE);
   // Números de 3x5 para los bocadillos de los clientes.
   DIGITS.forEach((rows, n) => paint(scene, `digit_${n}`, rows, { k: '#2b1d14' }));

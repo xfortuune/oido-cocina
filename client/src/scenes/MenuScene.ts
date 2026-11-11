@@ -1,7 +1,10 @@
 import Phaser from 'phaser';
 import { getRecipe } from '@hora-punta/shared';
 import { isTouchDevice } from '../layout';
-import { net } from '../net';
+import { audio } from '../audio';
+import { net, savedLook } from '../net';
+import { menuPresence } from '../presence';
+import { addSoundToggle } from '../ui/SoundToggle';
 import { fillStack } from '../pixel/items';
 import { chefKey, generateTextures } from '../pixel/sprites';
 import { clamp, COLORS, drawBackground, pixelPanel, txt } from '../theme';
@@ -14,8 +17,10 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     generateTextures(this);
+    audio.music('menu');
     // Al volver al menú se sale de la partida anterior: el modo se elige de nuevo.
     if (net.connected) void net.leave();
+    menuPresence();
     const { width: W, height: H } = this.scale;
     drawBackground(this);
     const s = clamp(Math.min(W / 480, H / 760), 0.7, 1.5);
@@ -23,7 +28,9 @@ export class MenuScene extends Phaser.Scene {
     // Cocinero y hamburguesa gigantes en pixel art.
     const px = Math.max(3, Math.round(6 * s));
     const heroY = Math.round(H * 0.26);
-    this.add.image(W / 2 - 14 * px, heroY, chefKey(0, 'down', 0)).setScale(px).setOrigin(0.5, 1);
+    // Tu cocinero (tócalo para cambiarle el delantal o el accesorio).
+    const hero = this.add.image(W / 2 - 14 * px, heroY, chefKey(savedLook(), 'down', 0)).setScale(px).setOrigin(0.5, 1);
+    hero.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.scene.start('look'));
     const burger = this.add.container(W / 2 + 10 * px, heroY).setScale(px);
     fillStack(burger, getRecipe('chispa').layers);
     this.tweens.add({ targets: burger, y: heroY - px * 2, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
@@ -42,6 +49,7 @@ export class MenuScene extends Phaser.Scene {
       'Carne a la plancha, patatas a la freidora, vasos a las máquinas.',
       'Monta la hamburguesa y entrega cada parte en el pase rojo.',
       'En equipo, cada uno lleva sus puestos y la caja toma nota.',
+      '20 niveles: cada 2, una habilidad. Si perdéis una ronda, al nivel 1.',
       touch ? 'Joystick para moverte, botón naranja para la acción.' : 'WASD o flechas para moverte, Espacio para la acción.',
     ].join('\n');
     const helpText = txt(this, W / 2, heroY + 140 * s, help, clamp(17 * s, 13, 20), {
@@ -75,6 +83,28 @@ export class MenuScene extends Phaser.Scene {
         onPress: () => play(n),
       });
     });
+
+    // Tu cocinero y ranking del grupo.
+    const rows = Math.ceil(4 / cols);
+    const sw = Math.min(200, (Math.min(W - 32, 560) - gap) / 2);
+    const sy = y + rows * (bh + gap) + 26 * s;
+    new Button(this, W / 2 - sw / 2 - gap / 2, sy, {
+      w: sw,
+      h: 46 * s,
+      color: 0x8d6e63,
+      label: 'Tu cocinero',
+      fontSize: 18 * s,
+      onPress: () => this.scene.start('look'),
+    });
+    new Button(this, W / 2 + sw / 2 + gap / 2, sy, {
+      w: sw,
+      h: 46 * s,
+      color: 0xd4a017,
+      label: 'Ranking',
+      fontSize: 18 * s,
+      onPress: () => this.scene.start('ranking'),
+    });
+    addSoundToggle(this, W - 24, 24, 3);
 
     // En PC, también con las teclas 1-4.
     this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {

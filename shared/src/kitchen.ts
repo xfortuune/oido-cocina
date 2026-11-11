@@ -12,6 +12,7 @@ import type { Ingredient } from './recipes';
  *  D  máquina de cola            N  máquina de zumo de naranja
  *  T  basura
  *  b c q l p  cajas de pan, carne cruda, queso, lechuga y patatas
+ *  t k        cajas de tomate y bacon (sus recetas salen en niveles más altos)
  */
 export const KITCHEN_MAP = [
   '...........',
@@ -22,7 +23,7 @@ export const KITCHEN_MAP = [
   'G___MM____F',
   'W___##____D',
   'W_________N',
-  'WbcqlpT#WWW',
+  'WbcqlpT#tkW',
 ];
 
 export type TileKind =
@@ -57,6 +58,8 @@ const CRATES: Record<string, CrateContent> = {
   q: 'queso',
   l: 'lechuga',
   p: 'patatas',
+  t: 'tomate',
+  k: 'bacon',
 };
 
 const DRINKS: Record<string, Flavor> = { D: 'cola', N: 'naranja' };

@@ -3,6 +3,8 @@ import '@fontsource/pixelify-sans/400.css';
 import '@fontsource/pixelify-sans/700.css';
 import { audio } from './audio';
 import { net } from './net';
+import { startPresence } from './presence';
+import { LookScene } from './scenes/LookScene';
 import { HudScene } from './scenes/HudScene';
 import { KitchenScene } from './scenes/KitchenScene';
 import { LobbyScene } from './scenes/LobbyScene';
@@ -31,8 +33,9 @@ async function start(): Promise<void> {
     // Los avatares vienen de cdn.discordapp.com: hace falta CORS para usarlos como textura.
     loader: { crossOrigin: 'anonymous' },
     // El orden importa: el HUD se dibuja encima de la cocina.
-    scene: [MenuScene, LobbyScene, KitchenScene, HudScene, SummaryScene, PerkScene, ShopScene, RankingScene],
+    scene: [MenuScene, LobbyScene, KitchenScene, HudScene, SummaryScene, PerkScene, ShopScene, RankingScene, LookScene],
   });
+  startPresence();
   // El navegador solo deja sonar tras el primer toque o tecla.
   const unlock = () => audio.unlock();
   window.addEventListener('pointerdown', unlock);

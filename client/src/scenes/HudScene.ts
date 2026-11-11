@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CUSTOMER_SLOTS_X, formatDuration, getPerk, getRecipe, newRecipesAt, ROLE_NAMES, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
+import { CUSTOMER_SLOTS_X, EMOTES, formatDuration, getPerk, getRecipe, newRecipesAt, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { addSoundToggle } from '../ui/SoundToggle';
 import { computeLayout, isTouchDevice, type Rect, type ScreenLayout } from '../layout';
@@ -36,6 +36,10 @@ export class HudScene extends Phaser.Scene {
   private perksText?: Phaser.GameObjects.Text;
   private perksKey = '';
   private lastTick = -1;
+  /** Bocadillos de gestos encima de cada cocinero. */
+  private emotes = new Map<string, { text: Phaser.GameObjects.Text; until: number }>();
+  /** Menú de gestos (móvil). */
+  private emoteMenu: Phaser.GameObjects.Container | null = null;
   /** El cartel de inicio de ronda solo sale una vez por ronda (no al girar el móvil). */
   private bannerShown = false;
   /** Nombre sobre cada cocinero. */
@@ -57,6 +61,9 @@ export class HudScene extends Phaser.Scene {
 
     const onSim = (ev: SimEvent) => this.onSimEvent(ev);
     this.kitchen.events.on('sim', onSim);
+    const onEmote = (msg: EmoteMessage) => this.showEmote(msg);
+    net.on('emote', onEmote);
+    this.events.once('shutdown', () => net.off('emote', onEmote));
     this.scale.on('resize', this.build, this);
     this.events.once('shutdown', () => {
       this.kitchen.events.off('sim', onSim);
@@ -106,6 +113,7 @@ export class HudScene extends Phaser.Scene {
     // La cocina solo ve las comandas de los pedidos a los que la caja ya ha tomado nota.
     this.syncTickets(sim.orders.filter((o) => o.taken));
     this.syncNameTags();
+    this.syncEmotes();
 
     const waiting = sim.orders.some((o) => !o.taken);
     const isCaja = this.kitchen.localPlayer?.roles.includes('caja') ?? false;
@@ -122,7 +130,7 @@ export class HudScene extends Phaser.Scene {
 
     const hint = this.kitchen.actionHint();
     this.actionLabel?.setText(hint);
-    this.hintText?.setText(`WASD / flechas: moverse   ·   Espacio / E: ${hint === '—' ? 'acción' : hint.toLowerCase()}`);
+    this.hintText?.setText(`WASD / flechas: moverse   ·   Espacio / E: ${hint === '—' ? 'acción' : hint.toLowerCase()}   ·   1-4: gestos`);
   }
 
   // ---------------------------------------------------------------- construcción
@@ -137,6 +145,8 @@ export class HudScene extends Phaser.Scene {
     this.hintText = undefined;
     this.nameTags.clear();
     this.tagAvatars.clear();
+    this.emotes.clear();
+    this.emoteMenu = null;
     this.rolesKey = '';
 
     const L = (this.L = computeLayout(this.scale.width, this.scale.height, isTouchDevice()));
@@ -168,7 +178,16 @@ export class HudScene extends Phaser.Scene {
       .setDepth(5)
       .setVisible(false);
     // Altavoz: en el móvil, entre el joystick y el botón; en el PC, abajo a la derecha de la cocina.
-    if (L.controls) addSoundToggle(this, L.controls.x + L.controls.w / 2 + 20, L.controls.y + 20, 3, 30);
+    if (L.controls) {
+      addSoundToggle(this, L.controls.x + L.controls.w / 2 + 24, L.controls.y + 20, 3, 30).setData('ui', true);
+      const chat = this.add
+        .image(L.controls.x + L.controls.w / 2 - 24, L.controls.y + 20, 'icon_chat')
+        .setScale(3)
+        .setDepth(30)
+        .setData('ui', true)
+        .setInteractive({ useHandCursor: true });
+      chat.on('pointerdown', () => this.toggleEmoteMenu());
+    }
     else addSoundToggle(this, L.kitchen.x + L.kitchen.w - 18, L.kitchen.y + L.kitchen.h - 14, 2, 30);
     this.levelText = txt(this, L.kitchen.x + L.kitchen.w - 6, L.kitchen.y + 4, '', 13, {
       color: '#ffc93c',
@@ -280,6 +299,8 @@ export class HudScene extends Phaser.Scene {
     // Cualquier toque en la mitad izquierda de la zona de controles mueve el joystick.
     const c = this.L.controls!;
     if (p.y < c.y || p.x > c.x + c.w / 2) return;
+    // Los iconos de gestos y sonido no mueven el joystick.
+    if (this.input.hitTestPointer(p).some((o) => o.getData('ui'))) return;
     this.stickPointer = p.id;
     this.onPointerMove(p);
   }
@@ -505,6 +526,74 @@ export class HudScene extends Phaser.Scene {
         break;
       }
     }
+  }
+
+  // ---------------------------------------------------------------- gestos
+
+  private showEmote({ id, emote }: EmoteMessage): void {
+    const label = EMOTES[emote];
+    if (!label) return;
+    audio.sfx('emote', emote);
+    this.emotes.get(id)?.text.destroy();
+    const colors = ['#ffffff', '#ffb36b', '#7ee081', '#ffc93c'];
+    const text = txt(this, 0, 0, label, 16, {
+      color: '#2b1d14',
+      backgroundColor: colors[emote],
+      padding: { x: 6, y: 3 },
+    })
+      .setOrigin(0.5, 1)
+      .setDepth(25);
+    this.tweens.add({ targets: text, scale: { from: 0.4, to: 1 }, duration: 180, ease: 'Back.Out' });
+    this.emotes.set(id, { text, until: this.time.now + 2200 });
+  }
+
+  private syncEmotes(): void {
+    for (const [id, e] of this.emotes) {
+      const pos = this.kitchen.renderedPosition(id);
+      if (!pos || this.time.now > e.until) {
+        e.text.destroy();
+        this.emotes.delete(id);
+        continue;
+      }
+      // Justo encima del nombre del cocinero.
+      const at = this.kitchen.worldToScreen(pos.x, pos.y - 1.45);
+      e.text.setPosition(Math.round(at.x), Math.round(at.y - 10));
+      e.text.setAlpha(Math.min(1, (e.until - this.time.now) / 300));
+    }
+  }
+
+  /** Móvil: los cuatro gestos encima de los controles. */
+  private toggleEmoteMenu(): void {
+    if (this.emoteMenu) {
+      this.emoteMenu.destroy();
+      this.emoteMenu = null;
+      return;
+    }
+    const c = this.L.controls!;
+    const menu = this.add.container(0, 0).setDepth(40);
+    const w = Math.min(92, (c.w - 30) / 4);
+    EMOTES.forEach((label, i) => {
+      const x = c.x + c.w / 2 + (i - 1.5) * (w + 6);
+      const y = c.y - 24;
+      const g = this.add.graphics();
+      pixelPanel(g, x - w / 2, y - 18, w, 36, COLORS.panel, 2);
+      const t = txt(this, x, y, label, 13).setOrigin(0.5);
+      if (t.width > w - 8) t.setScale((w - 8) / t.width);
+      const zone = this.add.zone(x, y, w, 36).setInteractive({ useHandCursor: true }).setData('ui', true);
+      zone.on('pointerdown', () => {
+        net.emote(i);
+        menu.destroy();
+        this.emoteMenu = null;
+      });
+      menu.add([g, t, zone]);
+    });
+    this.emoteMenu = menu;
+    this.time.delayedCall(4000, () => {
+      if (this.emoteMenu === menu) {
+        menu.destroy();
+        this.emoteMenu = null;
+      }
+    });
   }
 
   private popup(x: number, y: number, text: string, color: string, delay = 0): void {

@@ -2,7 +2,11 @@
 import Phaser from 'phaser';
 import { Client, type Room } from '@colyseus/sdk';
 import {
+  cleanLook,
+  DEFAULT_LOOK,
   ROOM_NAME,
+  type ChefLook,
+  type EmoteMessage,
   type InputMessage,
   type JoinOptions,
   type LobbyMember,
@@ -50,7 +54,7 @@ class Net extends Phaser.Events.EventEmitter {
       secure,
       pathname: import.meta.env.DEV ? '/colyseus' : '',
     });
-    const room = await client.joinOrCreate(ROOM_NAME, options);
+    const room = await client.joinOrCreate(ROOM_NAME, { ...options, look: options.look ?? savedLook() });
     this.room = room;
     room.onMessage('room', (info: RoomInfo) => {
       this.info = info;
@@ -64,6 +68,7 @@ class Net extends Phaser.Events.EventEmitter {
     });
     room.onMessage('events', (events: SimEvent[]) => this.emit('events', events));
     room.onMessage('bought', (id: string) => this.emit('bought', id));
+    room.onMessage('emote', (msg: EmoteMessage) => this.emit('emote', msg));
     room.onMessage('summary', (summary: SummaryInfo) => {
       this.summary = summary;
       saveRecord(summary.passed ? summary.level : summary.level - 1);
@@ -128,6 +133,10 @@ class Net extends Phaser.Events.EventEmitter {
   toggleReady(): void {
     this.room?.send('ready');
   }
+
+  emote(n: number): void {
+    this.room?.send('emote', n);
+  }
 }
 
 export const net = new Net();
@@ -165,5 +174,24 @@ function saveRecord(nivel: number): void {
     if (nivel > savedRecord()) localStorage.setItem('horaPunta.record', String(nivel));
   } catch {
     // Sin almacenamiento: el progreso dura solo esta sesión.
+  }
+}
+
+/** Delantal y accesorio elegidos en este navegador. */
+export function savedLook(): ChefLook {
+  try {
+    const raw = localStorage.getItem('horaPunta.look');
+    if (raw) return cleanLook(JSON.parse(raw));
+  } catch {
+    // sin almacenamiento o dato corrupto
+  }
+  return { ...DEFAULT_LOOK };
+}
+
+export function saveLook(look: ChefLook): void {
+  try {
+    localStorage.setItem('horaPunta.look', JSON.stringify(look));
+  } catch {
+    // sin almacenamiento
   }
 }

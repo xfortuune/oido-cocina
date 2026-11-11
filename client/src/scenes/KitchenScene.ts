@@ -108,6 +108,9 @@ export class KitchenScene extends Phaser.Scene {
     kb.on('keydown', (e: KeyboardEvent) => {
       if (e.repeat) return;
       if (e.key === ' ' || e.key === 'e' || e.key === 'E' || e.key === 'Enter') this.interact();
+      // Gestos rápidos: 1 ¡Oído!, 2 ¡Ayuda!, 3 ¡Marchando!, 4 ¡Gracias!
+      const n = Number(e.key);
+      if (n >= 1 && n <= 4) net.emote(n - 1);
     });
 
     const onSnap = (s: SimSnapshot) => this.sim.applySnapshot(s, net.id);
@@ -379,7 +382,7 @@ export class KitchenScene extends Phaser.Scene {
       let view = this.players.get(p.id);
       if (!view) {
         const shadow = this.add.ellipse(0, 0, 10, 4, 0x000000, 0.25);
-        const sprite = this.add.image(0, 0, chefKey(p.color, 'down', 0)).setOrigin(0.5, 1);
+        const sprite = this.add.image(0, 0, chefKey(p.look ?? p.color, 'down', 0)).setOrigin(0.5, 1);
         const held = this.add.container(0, 0);
         view = { sprite, shadow, held, heldSig: '', rx: p.x, ry: p.y };
         this.players.set(p.id, view);
@@ -404,7 +407,7 @@ export class KitchenScene extends Phaser.Scene {
       const px = Math.round(view.rx * TILE);
       const py = Math.round(view.ry * TILE + 5);
       view.sprite
-        .setTexture(chefKey(p.color, dir, frame))
+        .setTexture(chefKey(p.look ?? p.color, dir, frame))
         .setFlipX(dir === 'side' && p.fx < 0)
         .setPosition(px, py - (moving && frame === 1 ? 1 : 0))
         .setDepth(10 + py);

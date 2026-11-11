@@ -25,7 +25,8 @@ export type Sfx =
   | 'start'
   | 'levelUp'
   | 'runOver'
-  | 'perk';
+  | 'perk'
+  | 'emote';
 
 export type MusicMode = 'menu' | 'kitchen' | null;
 
@@ -293,6 +294,12 @@ class GameAudio {
       case 'runOver':
         [76, 74, 72, 67, 65].forEach((m, i) => this.marimba(midi(m), t + i * 0.18, 0.13, bus));
         break;
+      case 'emote': {
+        // Cada gesto con su melodía corta: ¡Oído!, ¡Ayuda!, ¡Marchando!, ¡Gracias!
+        const tunes = [[79, 84], [84, 79, 84], [72, 76, 79], [84, 88]];
+        (tunes[n] ?? tunes[0]).forEach((m, i) => this.pluck(midi(m), t + i * 0.07, 0.12, 0.09, bus));
+        break;
+      }
       case 'perk':
         [91, 96, 100, 103].forEach((m, i) => this.bell(midi(m), t + i * 0.05, 0.06));
         break;

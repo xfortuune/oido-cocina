@@ -9,6 +9,7 @@
 //   'perk'     PerkId: elegir una de las tres habilidades ofrecidas
 //   'buy'      UpgradeId: comprar una mejora en la tienda (dinero de todo el equipo)
 //   'ready'    en la tienda: listo para seguir (cuando lo están todos, a la sala)
+//   'emote'    number: gesto rápido (índice de EMOTES), en la cocina
 //   'modo'     number: cambiar cuántos jugadores se esperan (2-4, en el vestíbulo)
 //
 // Servidor → cliente:
@@ -16,7 +17,10 @@
 //   'snap'     SimSnapshot, ~20 veces por segundo durante el turno
 //   'events'   SimEvent[], efectos y avisos
 //   'summary'  SummaryInfo, al acabar el turno
+//   'emote'    EmoteMessage: alguien ha hecho un gesto
+//   'bought'   UpgradeId: alguien ha comprado una mejora
 
+import type { ChefLook } from './looks';
 import type { EndReason, PlayerStats, Role, TurnStats } from './sim';
 
 export const ROOM_NAME = 'kitchen';
@@ -33,6 +37,8 @@ export interface JoinOptions {
   nivel?: number;
   /** Grupo para el ranking: en Discord, el servidor (guild) o el canal. */
   grupo?: string;
+  /** Delantal y accesorio elegidos en el menú. */
+  look?: ChefLook;
   /** Token de Discord: el servidor lo usa para saber quién eres (nombre y avatar verificados). */
   accessToken?: string;
   /** Cuántos jugadores (1-4). Lo fija quien crea la sala. */
@@ -81,6 +87,12 @@ export interface LobbyMember {
   offer: string[] | null;
   /** En la tienda: ha pulsado «Listo». */
   ready: boolean;
+  look: ChefLook;
+}
+
+export interface EmoteMessage {
+  id: string;
+  emote: number;
 }
 
 export interface RoomInfo {

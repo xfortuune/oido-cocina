@@ -9,6 +9,8 @@ import {
   perkCount,
   PERK_EVERY,
   rollPerkOffer,
+  cleanLook,
+  EMOTES,
   getUpgrade,
   upgradePrice,
   type RunSummary,
@@ -65,6 +67,7 @@ export class KitchenRoom extends Room {
   private sim: KitchenSim | null = null;
   private summary: SummaryInfo | null = null;
   private lastInput = new Map<string, number>();
+  private lastEmote = new Map<string, number>();
 
   onCreate(options: JoinOptions): void {
     this.sala = String(options.sala ?? 'local');
@@ -115,6 +118,15 @@ export class KitchenRoom extends Room {
       this.broadcastRoom();
     });
     this.onMessage('perk', (client, id: string) => this.pickPerk(client.sessionId, String(id)));
+    // Gestos rápidos, como mucho uno por segundo y medio por cocinero.
+    this.onMessage('emote', (client, n: number) => {
+      const emote = Math.round(Number(n));
+      const now = Date.now();
+      if (this.phase !== 'playing' || !(emote >= 0 && emote < EMOTES.length)) return;
+      if (now - (this.lastEmote.get(client.sessionId) ?? 0) < 1500) return;
+      this.lastEmote.set(client.sessionId, now);
+      this.broadcast('emote', { id: client.sessionId, emote });
+    });
     this.onMessage('buy', (_client, id: string) => this.buy(String(id)));
     this.onMessage('ready', (client) => {
       const m = this.members.get(client.sessionId);
@@ -162,12 +174,13 @@ export class KitchenRoom extends Room {
       perks,
       offer: null,
       ready: false,
+      look: cleanLook(options.look, color),
     };
     this.members.set(client.sessionId, member);
     if (this.phase !== 'playing') this.assignRoles();
 
     // Quien entra a mitad de turno ayuda llevando cosas hasta el siguiente turno.
-    this.sim?.addPlayer(member.id, member.name, member.color, member.roles, member.perks);
+    this.sim?.addPlayer(member.id, member.name, member.color, member.roles, member.perks, member.look);
     this.broadcastRoom();
     if (this.summary) client.send('summary', this.summary);
   }
@@ -239,7 +252,7 @@ export class KitchenRoom extends Room {
     sim.moveOnTick = false;
     sim.needsCaja = this.modo > 1;
     if (this.turnDuration) sim.turnDuration = this.turnDuration;
-    for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles, m.perks);
+    for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles, m.perks, m.look);
     // Clientela fiel: más reputación al empezar.
     const fans = [...this.members.values()].reduce((n, m) => n + perkCount(m.perks, 'clientela'), 0);
     sim.reputation += 10 * fans + (this.mejoras.includes('resenas') ? 15 : 0);

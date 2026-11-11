@@ -5,6 +5,7 @@ import {
   getUpgrade,
   MAX_LEVEL,
   newRecipesAt,
+  type ChefLook,
   type RoomInfo,
   type RunSummary,
   type SummaryInfo,
@@ -270,9 +271,9 @@ export class SummaryScene extends Phaser.Scene {
   }
 
   /** Cocinero y avatar al principio de una fila; devuelve dónde empieza el nombre. */
-  private chefRow(p: { color: number; avatar: string | null; id: string; name: string }, x: number, ry: number, rowH: number, s: number): number {
+  private chefRow(p: { color: number; look?: ChefLook; avatar: string | null; id: string; name: string }, x: number, ry: number, rowH: number, s: number): number {
     const scale = Math.max(1, Math.round(1.8 * s));
-    this.add.image(x + 24, ry + rowH - 6, chefKey(p.color, 'down', 0)).setScale(scale).setOrigin(0.5, 1);
+    this.add.image(x + 24, ry + rowH - 6, chefKey(p.look ?? p.color, 'down', 0)).setScale(scale).setOrigin(0.5, 1);
     const avatarSize = Math.round(20 * s);
     const avatar = addAvatar(this, p, x + 46 + avatarSize / 2, ry + rowH / 2, avatarSize);
     return x + 46 + (avatar ? avatarSize + 8 : 0);

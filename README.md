@@ -272,6 +272,20 @@ dinero, tiempo, las habilidades de cada uno, el MVP de toda la partida y el **ra
 el ranking es **por servidor**, así que se ve qué grupo de amigos llega más lejos. También se puede consultar desde
 el menú («Ranking»). El servidor lo guarda en `server/data/ranking.json` (o en la ruta de `RANKING_FILE`).
 
+### Social y Discord
+
+- **Invitar**: en Discord, la sala tiene un botón «Invitar» que abre el diálogo de Discord para llamar a tus amigos
+  a la Actividad (entran al canal de voz y a la misma cocina).
+- **Estado en tu perfil**: mientras jugáis, Discord muestra qué hacéis («Cocinando en el nivel 7 · 3 de 4 cocineros»,
+  «De compras en la tienda», «Partida terminada: 9 niveles»…) con cuántos sois, para que los amigos se apunten.
+  Para esto la Actividad pide el permiso `rpc.activities.write` (Discord lo pregunta una vez).
+- **Tu cocinero**: en el menú (o tocando al cocinero grande) eliges el **color del delantal** (8) y un **accesorio**
+  que se gana con tu récord: gorro de chef, gorra (2 niveles), pañuelo (4), bigote (6), gafas de sol (10) y corona (20).
+  Se guarda en el navegador y lo ven todos en la cocina, la sala y los resúmenes.
+- **Gestos rápidos**: «¡Oído!», «¡Ayuda!», «¡Marchando!» y «¡Gracias!» salen en un bocadillo encima de tu cocinero, con
+  su sonido. En el PC, teclas **1-4**; en el móvil, el icono del bocadillo entre el joystick y el botón. Útil para quien
+  no tiene micro.
+
 ### Sonido
 
 Todo el sonido se genera en el navegador (Web Audio), sin archivos: marimba y campanillas suaves para coger,
@@ -298,6 +312,7 @@ acelera en los últimos 30 segundos de la ronda. El altavoz (menú, tienda y coc
 |---|---|---|
 | Moverse | WASD o flechas | Joystick (izquierda) |
 | Acción (coger, dejar, apilar, servir, tomar nota, pasar) | Espacio, E o Enter | Botón naranja (muestra la acción) |
+| Gestos rápidos | 1, 2, 3, 4 | Icono del bocadillo |
 
 ## Cómo funciona la red
 
@@ -336,4 +351,5 @@ Variables de entorno: ver `.env.example` (`VITE_DISCORD_CLIENT_ID`, `DISCORD_CLI
    ✅ Mini-habilidades cada 2 niveles; perder una ronda devuelve al nivel 1.
    ✅ Tienda entre rondas, resumen final de la partida y ranking por servidor de Discord.
    ✅ Sonido y música, vapor y humo, destellos al servir, clientes que sudan, confeti, comandas que tiemblan.
+   ✅ Invitar desde el juego, estado en Discord, delantal y accesorios, gestos rápidos.
    Pendiente: eventos aleatorios, stock de ingredientes

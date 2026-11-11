@@ -14,6 +14,9 @@ async function bot(name, opts = {}) {
   room.onMessage('snap', (s) => (b.snap = s));
   room.onMessage('events', (e) => b.events.push(...e));
   room.onMessage('summary', (s) => (b.summary = s));
+  b.emotes = [];
+  room.onMessage('emote', (e) => b.emotes.push(e));
+  room.onMessage('bought', () => {});
   room.send('hello');
   b.me = () => b.snap?.players.find((p) => p.id === b.id);
   // Camina a velocidad normal por los puntos indicados y se gira hacia `face`.
@@ -42,10 +45,12 @@ async function bot(name, opts = {}) {
   return b;
 }
 
-const ana = await bot('Ana');
+const ana = await bot('Ana', { look: { apron: 6, hat: 'corona' } });
 const beto = await bot('Beto');
 check(ana.info?.members.length === 2, 'Los dos están en la misma sala');
 check(ana.info.nivel === 1, 'Sala nueva: nivel 1');
+const anaLook = ana.info.members.find((m) => m.id === ana.id).look;
+check(anaLook.apron === 6 && anaLook.hat === 'corona', 'Ana entra con su delantal rosa y corona');
 
 beto.room.send('claim', 'plancha');
 beto.room.send('claim', 'freidora');
@@ -57,6 +62,11 @@ ana.room.send('start');
 await wait(400);
 check(ana.info.phase === 'playing' && !!beto.snap, 'Empieza el turno en los dos');
 check(beto.snap.level === 1 && beto.snap.goal >= 2, `La ronda es del nivel 1 con objetivo ${beto.snap.goal}`);
+check(beto.snap.players.find((p) => p.id === ana.id)?.look.hat === 'corona', 'Beto ve la corona de Ana en la cocina');
+ana.room.send('emote', 1);
+ana.room.send('emote', 2);
+await wait(300);
+check(beto.emotes.length === 1 && beto.emotes[0].id === ana.id && beto.emotes[0].emote === 1, 'Ana grita «¡Ayuda!» y Beto lo ve (el segundo gesto seguido se ignora)');
 
 // Beto: carne cruda a la plancha
 await beto.walk([[2.5, 7.5]], [0, 1]);

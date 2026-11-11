@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { formatDuration, getPerk, getRecipe, levelParams, newRecipesAt, ROLE_NAMES, ROLES, type Role, type RoomInfo } from '@hora-punta/shared';
-import { getIdentity, isInDiscord } from '../discord';
+import { getIdentity, isInDiscord, openInvite } from '../discord';
 import { audio } from '../audio';
 import { net, saveName, savedName, savedRecord } from '../net';
 import { CHEF_COLORS, chefKey } from '../pixel/sprites';
@@ -176,7 +176,7 @@ export class LobbyScene extends Phaser.Scene {
     pixelPanel(g, W / 2 - boxW / 2, y, boxW, listH);
     info.members.forEach((m, i) => {
       const ry = y + 8 + i * rowH + (anyPerks ? 15 * s : rowH / 2);
-      this.add.image(W / 2 - boxW / 2 + 22, ry + 8 * s, chefKey(m.color, 'down', 0)).setScale(Math.max(1, Math.round(1.6 * s))).setOrigin(0.5, 1);
+      this.add.image(W / 2 - boxW / 2 + 22, ry + 8 * s, chefKey(m.look ?? m.color, 'down', 0)).setScale(Math.max(1, Math.round(1.6 * s))).setOrigin(0.5, 1);
       const roles = m.roles.length ? m.roles.map((r) => ROLE_NAMES[r]).join(', ') : 'sin puesto';
       const label = `${m.name}${m.id === net.id ? ' (tú)' : ''}`;
       const avatarSize = Math.round(22 * s);
@@ -223,9 +223,9 @@ export class LobbyScene extends Phaser.Scene {
 
     const covered = ROLES.every((r) => info.members.some((m) => m.roles.includes(r)));
     const ready = covered && info.members.length >= info.modo;
-    // En Discord el nombre es el de tu cuenta y la sala es el canal de voz: sobra «Cambiar nombre».
+    // En Discord el nombre es el de tu cuenta y la sala es el canal de voz: en vez de «Cambiar nombre», «Invitar».
     const discord = isInDiscord();
-    const buttons = discord ? 2 : 3;
+    const buttons = 3;
     const btnW = Math.min((boxW - 10 * (buttons - 1)) / buttons, 220);
     const btnY = Math.min(H - 40 * s, y + 34 * s);
     const bx = (i: number) => W / 2 + (i - (buttons - 1) / 2) * (btnW + 10);
@@ -237,7 +237,15 @@ export class LobbyScene extends Phaser.Scene {
       fontSize: 18 * s,
       onPress: () => this.scene.start('menu'),
     });
-    if (!discord) new Button(this, bx(1), btnY, {
+    if (discord) new Button(this, bx(1), btnY, {
+      w: btnW,
+      h: 56 * s,
+      color: 0x5865f2,
+      label: 'Invitar',
+      fontSize: 18 * s,
+      onPress: () => void openInvite(),
+    });
+    else new Button(this, bx(1), btnY, {
       w: btnW,
       h: 56 * s,
       color: COLORS.blue,
@@ -258,8 +266,11 @@ export class LobbyScene extends Phaser.Scene {
       fontSize: 20 * s,
       onPress: () => ready && net.start(),
     });
-    if (missing > 0 && !discord) {
-      txt(this, W / 2, btnY + 40 * s, `Para que entren tus amigos, que abran este mismo enlace (sala «${info.sala}»).`, 13 * s, {
+    if (missing > 0) {
+      const hint = discord
+        ? 'Pulsa «Invitar» para llamar a tus amigos: entrarán al canal de voz y a esta cocina.'
+        : `Para que entren tus amigos, que abran este mismo enlace (sala «${info.sala}»).`;
+      txt(this, W / 2, btnY + 40 * s, hint, 13 * s, {
         color: '#fff4dc99',
         align: 'center',
         wordWrap: { width: W - 30 },

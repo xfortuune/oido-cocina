@@ -16,6 +16,7 @@ import {
 import { levelParams, RECIPE_LEVEL, type LevelParams } from './levels';
 import { perkCount } from './perks';
 import { EXTRA_GRILL } from './shop';
+import { DEFAULT_LOOK, type ChefLook } from './looks';
 import { getRecipe, type Ingredient } from './recipes';
 
 export const CONFIG = {
@@ -108,6 +109,8 @@ export interface Player {
   roles: Role[];
   /** Mini-habilidades de la partida (perks.ts); las repetidas suman. */
   perks: string[];
+  /** Delantal y accesorio. */
+  look: ChefLook;
 }
 
 /** Contribución de cada jugador, para elegir al MVP del turno. */
@@ -262,7 +265,7 @@ export class KitchenSim {
 
   // ------------------------------------------------------------ jugadores
 
-  addPlayer(id: string, name: string, color: number, roles: Role[] = ROLES, perks: string[] = []): Player {
+  addPlayer(id: string, name: string, color: number, roles: Role[] = ROLES, perks: string[] = [], look: ChefLook = DEFAULT_LOOK): Player {
     const spawn = PLAYER_SPAWNS[color % PLAYER_SPAWNS.length];
     const p: Player = {
       id,
@@ -277,6 +280,7 @@ export class KitchenSim {
       holding: null,
       roles: [...roles],
       perks: [...perks],
+      look: { ...look },
     };
     this.players.set(id, p);
     this.playerStats[id] ??= { taken: 0, delivered: 0, cooked: 0, assembled: 0, mistakes: 0 };

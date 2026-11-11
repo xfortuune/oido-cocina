@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
-import { CONFIG, CUSTOMER_SLOTS_X, formatDuration, getRecipe, newRecipesAt, ROLE_NAMES, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
+import { CUSTOMER_SLOTS_X, formatDuration, getPerk, getRecipe, newRecipesAt, ROLE_NAMES, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
+import { audio } from '../audio';
+import { addSoundToggle } from '../ui/SoundToggle';
 import { computeLayout, isTouchDevice, type Rect, type ScreenLayout } from '../layout';
 import { fillStack, stackPixelHeight } from '../pixel/items';
 import { net } from '../net';
@@ -30,6 +32,10 @@ export class HudScene extends Phaser.Scene {
   private cajaHint?: Phaser.GameObjects.Text;
   private rolesKey = '';
   private levelText?: Phaser.GameObjects.Text;
+  /** Tus habilidades, debajo de tus puestos. */
+  private perksText?: Phaser.GameObjects.Text;
+  private perksKey = '';
+  private lastTick = -1;
   /** El cartel de inicio de ronda solo sale una vez por ronda (no al girar el móvil). */
   private bannerShown = false;
   /** Nombre sobre cada cocinero. */
@@ -67,16 +73,34 @@ export class HudScene extends Phaser.Scene {
     const sim = this.kitchen.sim;
     const t = Math.ceil(sim.timeLeft);
     this.hud.time.setText(`${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`).setColor(t <= 15 ? '#ff6b5b' : '#fff4dc');
+    // Cuenta atrás de los últimos 10 segundos.
+    if (t <= 10 && t > 0 && t !== this.lastTick && !sim.ended) {
+      this.lastTick = t;
+      audio.sfx('tick');
+      this.tweens.add({ targets: this.hud.time, scale: { from: 1.3, to: 1 }, duration: 250 });
+    }
     this.hud.money.setText(String(sim.money)).setColor(sim.money < 0 ? '#ff6b5b' : '#fff4dc');
     this.hud.rep.setText(String(Math.max(0, sim.reputation))).setColor(sim.reputation <= 15 ? '#ff6b5b' : '#fff4dc');
     const reached = sim.stats.served >= sim.goal;
     this.hud.served.setText(`${sim.stats.served}/${sim.goal}`).setColor(reached ? '#7ee081' : '#fff4dc');
     this.levelText?.setText(`Nivel ${sim.level}${reached ? ' · ¡objetivo cumplido!' : ''}`);
-    // En pantallas estrechas, debajo de los puestos para que no se pisen.
-    if (this.levelText && this.rolesText) {
+    const perks = this.kitchen.localPlayer?.perks ?? [];
+    const perksKey = perks.join(',');
+    if (this.perksText && perksKey !== this.perksKey) {
+      this.perksKey = perksKey;
+      // Agrupadas: «Zapatillas ×2 · Termómetro».
+      const counts = new Map<string, number>();
+      for (const id of perks) counts.set(id, (counts.get(id) ?? 0) + 1);
+      const label = [...counts].map(([id, n]) => `${getPerk(id)?.short ?? id}${n > 1 ? ` ×${n}` : ''}`).join(' · ');
+      this.perksText.setText(label ? `Habilidades: ${label}` : '').setVisible(!!label);
+    }
+    // En pantallas estrechas, el nivel va debajo de los puestos y habilidades para que no se pisen.
+    if (this.levelText && this.rolesText && this.perksText) {
       const k = this.L.kitchen;
-      const crowded = this.rolesText.visible && this.rolesText.width + this.levelText.width + 16 > k.w;
-      this.levelText.setY(k.y + 4 + (crowded ? this.rolesText.height + 2 : 0));
+      const leftW = Math.max(this.rolesText.visible ? this.rolesText.width : 0, this.perksText.visible ? this.perksText.width : 0);
+      const crowded = leftW + this.levelText.width + 16 > k.w;
+      const below = this.perksText.visible ? this.perksText.y + this.perksText.height + 2 : k.y + 4 + this.rolesText.height + 2;
+      this.levelText.setY(crowded ? below : k.y + 4);
     }
     if (!this.bannerShown && sim.goal > 0 && net.snapshot) this.showBanner();
     // La cocina solo ve las comandas de los pedidos a los que la caja ya ha tomado nota.
@@ -135,6 +159,17 @@ export class HudScene extends Phaser.Scene {
       .setDepth(6)
       .setVisible(false);
 
+    this.perksKey = '';
+    this.perksText = txt(this, L.kitchen.x + 6, L.kitchen.y + 4 + this.rolesText.height + 2, '', 12, {
+      color: '#ffc93c',
+      backgroundColor: '#2b1d14aa',
+      padding: { x: 4, y: 2 },
+    })
+      .setDepth(5)
+      .setVisible(false);
+    // Altavoz: en el móvil, entre el joystick y el botón; en el PC, abajo a la derecha de la cocina.
+    if (L.controls) addSoundToggle(this, L.controls.x + L.controls.w / 2 + 20, L.controls.y + 20, 3, 30);
+    else addSoundToggle(this, L.kitchen.x + L.kitchen.w - 18, L.kitchen.y + L.kitchen.h - 14, 2, 30);
     this.levelText = txt(this, L.kitchen.x + L.kitchen.w - 6, L.kitchen.y + 4, '', 13, {
       color: '#ffc93c',
       backgroundColor: '#2b1d14aa',
@@ -187,6 +222,7 @@ export class HudScene extends Phaser.Scene {
       wordWrap: { width: L.kitchen.w - 20 },
     }).setOrigin(0.5, 0);
     for (const t of [title, sub]) t.setDepth(20);
+    audio.sfx('start');
     this.tweens.add({ targets: title, scale: { from: 0.4, to: 1 }, duration: 350, ease: 'Back.Out' });
     this.tweens.add({ targets: [title, sub], alpha: 0, delay: 3200, duration: 500, onComplete: () => { title.destroy(); sub.destroy(); } });
   }
@@ -350,6 +386,8 @@ export class HudScene extends Phaser.Scene {
       }
       const ratio = Math.max(0, order.patience / order.maxPatience);
       const color = ratio > 0.5 ? COLORS.green : ratio > 0.25 ? 0xffa726 : COLORS.red;
+      // Las comandas a punto de perderse tiemblan.
+      view.container.angle = ratio < 0.2 ? Math.sin(this.time.now / 40) * 2 : 0;
       view.bar.clear().fillStyle(COLORS.ink).fillRect(4, view.h - 10, view.w - 8, 7).fillStyle(color).fillRect(6, view.h - 8, Math.max(2, (view.w - 12) * ratio), 3);
     });
   }
@@ -432,7 +470,7 @@ export class HudScene extends Phaser.Scene {
       }
       case 'burnt': {
         const at = this.kitchen.worldToScreen(ev.x + 0.5, ev.y);
-        this.popup(at.x, at.y, `¡${ev.what === 'carne' ? 'Carne quemada' : 'Patatas quemadas'}! -${CONFIG.burnCost}`, '#ff6b5b');
+        this.popup(at.x, at.y, `¡${ev.what === 'carne' ? 'Carne quemada' : 'Patatas quemadas'}!${ev.cost ? ` -${ev.cost}` : ''}`, '#ff6b5b');
         break;
       }
       case 'cooked':

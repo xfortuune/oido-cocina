@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { getPerk, perkCount, ROLE_NAMES, type PerkId, type RoomInfo } from '@hora-punta/shared';
+import { audio } from '../audio';
 import { net } from '../net';
 import { CHEF_COLORS } from '../pixel/sprites';
 import { clamp, COLORS, drawBackground, pixelPanel, txt } from '../theme';
@@ -15,8 +16,10 @@ export class PerkScene extends Phaser.Scene {
   }
 
   create(): void {
+    audio.music('menu');
     const onRoom = (info: RoomInfo) => {
       if (info.phase === 'lobby') this.scene.start('lobby');
+      else if (info.phase === 'shop') this.scene.start('shop');
       else if (info.phase === 'playing') this.scene.start('kitchen');
       else this.build();
     };
@@ -77,6 +80,7 @@ export class PerkScene extends Phaser.Scene {
         zone.on('pointerdown', () => {
           g.clear();
           pixelPanel(g, cx, cy, cardW, cardH, 0xffe2b8);
+          audio.sfx('perk');
           net.pickPerk(id);
         });
       });

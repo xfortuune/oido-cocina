@@ -63,6 +63,7 @@ class Net extends Phaser.Events.EventEmitter {
       this.emit('snap', snap);
     });
     room.onMessage('events', (events: SimEvent[]) => this.emit('events', events));
+    room.onMessage('bought', (id: string) => this.emit('bought', id));
     room.onMessage('summary', (summary: SummaryInfo) => {
       this.summary = summary;
       saveRecord(summary.passed ? summary.level : summary.level - 1);
@@ -118,6 +119,14 @@ class Net extends Phaser.Events.EventEmitter {
 
   pickPerk(id: string): void {
     this.room?.send('perk', id);
+  }
+
+  buy(id: string): void {
+    this.room?.send('buy', id);
+  }
+
+  toggleReady(): void {
+    this.room?.send('ready');
   }
 }
 

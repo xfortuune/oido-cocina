@@ -5,6 +5,7 @@ import { Server, WebSocketTransport } from 'colyseus';
 import { ROOM_NAME } from '@hora-punta/shared';
 import { discordConfig, exchangeCode } from './discord.ts';
 import { KitchenRoom } from './KitchenRoom.ts';
+import { getRanking } from './ranking.ts';
 
 // Un único .env en la raíz del proyecto, compartido con el cliente (ver .env.example).
 try {
@@ -43,6 +44,11 @@ const server = new Server({
         // 400 y no 5xx: un túnel o proxy (Cloudflare) cambiaría un 5xx por su propia página de error.
         res.status(400).json({ error: 'No se pudo validar con Discord' });
       }
+    });
+
+    // Ranking de récords de un grupo (servidor o canal de Discord).
+    app.get('/api/ranking', (req, res) => {
+      res.json(getRanking(String(req.query.grupo ?? '')));
     });
 
     // En producción el mismo servidor sirve el juego compilado (npm run build).

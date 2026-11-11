@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { getRecipe } from '@hora-punta/shared';
 import { isTouchDevice } from '../layout';
+import { audio } from '../audio';
 import { net } from '../net';
+import { addSoundToggle } from '../ui/SoundToggle';
 import { fillStack } from '../pixel/items';
 import { chefKey, generateTextures } from '../pixel/sprites';
 import { clamp, COLORS, drawBackground, pixelPanel, txt } from '../theme';
@@ -14,6 +16,7 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     generateTextures(this);
+    audio.music('menu');
     // Al volver al menú se sale de la partida anterior: el modo se elige de nuevo.
     if (net.connected) void net.leave();
     const { width: W, height: H } = this.scale;
@@ -76,6 +79,18 @@ export class MenuScene extends Phaser.Scene {
         onPress: () => play(n),
       });
     });
+
+    // Ranking del grupo y altavoz.
+    const rows = Math.ceil(4 / cols);
+    new Button(this, W / 2, y + rows * (bh + gap) + 26 * s, {
+      w: Math.min(220, W - 32),
+      h: 46 * s,
+      color: 0xd4a017,
+      label: 'Ranking',
+      fontSize: 18 * s,
+      onPress: () => this.scene.start('ranking'),
+    });
+    addSoundToggle(this, W - 24, 24, 3);
 
     // En PC, también con las teclas 1-4.
     this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {

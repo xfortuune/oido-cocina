@@ -36,7 +36,7 @@ Los bots también pueden empezar en otro nivel con la opción `nivel` (solo para
 node scripts/prueba-bots.mjs
 ```
 
-Dos bots entran en una sala, se reparten los puestos, cocinan, toman nota, se pasan cosas y terminan un turno; luego un bot solo cocina dos hamburguesas, supera un nivel, elige habilidad y pierde la siguiente ronda (tarda unos 2 minutos); el script marca cada paso con ✅ o ❌.
+Dos bots entran en una sala, se reparten los puestos, cocinan, toman nota, se pasan cosas y terminan un turno; luego un bot solo cocina dos hamburguesas, supera un nivel, elige habilidad, pasa por la tienda, pierde la siguiente ronda y entra en el ranking (tarda unos 2 minutos); el script marca cada paso con ✅ o ❌.
 
 ## Jugar en Discord (Actividad)
 
@@ -244,7 +244,41 @@ Si alguien sale de la sala y vuelve a entrar desde Discord, recupera las suyas.
 | Disculpa a tiempo | Tu primer fallo de cada ronda no cuesta reputación ni dinero | ×2 |
 | Clientela fiel | El equipo empieza cada ronda con 10 de reputación más | ×2 |
 
-Están definidas en `shared/src/perks.ts`.
+Están definidas en `shared/src/perks.ts`. Durante la ronda, las tuyas aparecen debajo de tus puestos.
+
+### Tienda
+
+Tras cada nivel superado (y tras elegir habilidad, si toca) se abre la **tienda**. El dinero que ganáis en cada
+ronda va a una **caja común de la partida**, y cualquiera puede comprar **mejoras del local** que valen para todos.
+Se sigue cuando todos pulsan «Listo». Al perder una ronda se pierden el dinero y las mejoras.
+
+| Mejora | Efecto | Precio (1 jugador) |
+|---|---|---|
+| Tercera plancha | Una plancha más, debajo de la mesa de montaje | 45 |
+| Plancha de hierro | Toda la carne se hace un 20 % antes | 35 |
+| Freidora industrial | Todas las patatas se fríen un 30 % antes | 30 |
+| Dispensador doble | Todos los vasos se llenan un 40 % antes | 25 |
+| Terraza con sombrillas | Los clientes esperan un 15 % más | 40 |
+| Extintor | Lo quemado no cuesta dinero y todo tarda un 30 % más en quemarse | 25 |
+| Tarro de propinas | Las propinas valen el doble | 20 |
+| Reseñas de 5 estrellas | Cada ronda empieza con 15 de reputación más | 30 |
+
+Con más jugadores cuestan un 25 % más por jugador extra (también se gana más). Están en `shared/src/shop.ts`.
+
+### Fin de la partida y ranking
+
+Al perder (o al superar los 20 niveles) sale el **resumen de la partida**: niveles superados, hamburguesas,
+dinero, tiempo, las habilidades de cada uno, el MVP de toda la partida y el **ranking del grupo**. En Discord,
+el ranking es **por servidor**, así que se ve qué grupo de amigos llega más lejos. También se puede consultar desde
+el menú («Ranking»). El servidor lo guarda en `server/data/ranking.json` (o en la ruta de `RANKING_FILE`).
+
+### Sonido
+
+Todo el sonido se genera en el navegador (Web Audio), sin archivos: marimba y campanillas suaves para coger,
+apilar (cada capa suena más aguda), entregar y cobrar; chisporroteo de la plancha y burbujeo de la freidora;
+avisos antes de que algo se queme; cuenta atrás en los últimos 10 segundos; y una música tranquila que se
+acelera en los últimos 30 segundos de la ronda. El altavoz (menú, tienda y cocina) cambia entre
+**música y sonido → solo efectos → silencio**, y se recuerda en cada navegador.
 
 ### Pedidos
 
@@ -291,7 +325,7 @@ scripts/  Prueba con bots.
 
 El plano de la cocina es un mapa de caracteres en `shared/src/kitchen.ts`: se puede rediseñar editando el texto.
 
-Variables de entorno: ver `.env.example` (`VITE_DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `SERVER_PORT`, `REQUIRE_DISCORD`, `DISCORD_TUNNEL`).
+Variables de entorno: ver `.env.example` (`VITE_DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `SERVER_PORT`, `REQUIRE_DISCORD`, `DISCORD_TUNNEL`, `RANKING_FILE`).
 
 ## Hoja de ruta
 
@@ -300,4 +334,6 @@ Variables de entorno: ver `.env.example` (`VITE_DISCORD_CLIENT_ID`, `DISCORD_CLI
 3. ✅ Actividad de Discord: login, nombre y avatar, una partida por canal de voz, guía de portal, túnel y despliegue
 4. ⏳ ✅ 20 niveles con dificultad creciente según el número de jugadores y 6 recetas (tomate y bacon).
    ✅ Mini-habilidades cada 2 niveles; perder una ronda devuelve al nivel 1.
-   Pendiente: tienda de mejoras, eventos aleatorios, stock de ingredientes, sonido y pulido visual
+   ✅ Tienda entre rondas, resumen final de la partida y ranking por servidor de Discord.
+   ✅ Sonido y música, vapor y humo, destellos al servir, clientes que sudan, confeti, comandas que tiemblan.
+   Pendiente: eventos aleatorios, stock de ingredientes

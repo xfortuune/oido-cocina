@@ -7,6 +7,8 @@
 //   'start'    empezar el turno (cualquiera, si todos los puestos están cubiertos)
 //   'lobby'    volver al vestíbulo desde el resumen (o elegir habilidades, si toca)
 //   'perk'     PerkId: elegir una de las tres habilidades ofrecidas
+//   'buy'      UpgradeId: comprar una mejora en la tienda (dinero de todo el equipo)
+//   'ready'    en la tienda: listo para seguir (cuando lo están todos, a la sala)
 //   'modo'     number: cambiar cuántos jugadores se esperan (2-4, en el vestíbulo)
 //
 // Servidor → cliente:
@@ -29,6 +31,8 @@ export interface JoinOptions {
   turno?: number;
   /** Nivel con el que empieza la sala (solo para pruebas). */
   nivel?: number;
+  /** Grupo para el ranking: en Discord, el servidor (guild) o el canal. */
+  grupo?: string;
   /** Token de Discord: el servidor lo usa para saber quién eres (nombre y avatar verificados). */
   accessToken?: string;
   /** Cuántos jugadores (1-4). Lo fija quien crea la sala. */
@@ -62,7 +66,7 @@ export interface InputMessage {
   moving: boolean;
 }
 
-export type RoomPhase = 'lobby' | 'playing' | 'summary' | 'perks';
+export type RoomPhase = 'lobby' | 'playing' | 'summary' | 'perks' | 'shop';
 
 export interface LobbyMember {
   id: string;
@@ -75,6 +79,8 @@ export interface LobbyMember {
   perks: string[];
   /** Habilidades entre las que está eligiendo ahora (null si no le toca o ya ha elegido). */
   offer: string[] | null;
+  /** En la tienda: ha pulsado «Listo». */
+  ready: boolean;
 }
 
 export interface RoomInfo {
@@ -85,6 +91,35 @@ export interface RoomInfo {
   members: LobbyMember[];
   /** Nivel que se va a jugar. Al perder una ronda se vuelve al 1. */
   nivel: number;
+  /** Dinero de la partida (se gasta en la tienda; se pierde al perder una ronda). */
+  dinero: number;
+  /** Mejoras de la tienda compradas en esta partida. */
+  mejoras: string[];
+}
+
+export interface RankingEntry {
+  names: string[];
+  /** Niveles superados. */
+  level: number;
+  served: number;
+  players: number;
+  /** Fecha ISO. */
+  date: string;
+}
+
+/** Resumen de una partida entera (al perder, o al superar los 20 niveles). */
+export interface RunSummary {
+  levelsPassed: number;
+  served: number;
+  earned: number;
+  perfect: number;
+  seconds: number;
+  players: (LobbyMember & { score: number })[];
+  mvpId: string | null;
+  mejoras: string[];
+  /** Mejores partidas del grupo, y en qué puesto ha quedado esta (null si fuera del ranking). */
+  ranking: RankingEntry[];
+  position: number | null;
 }
 
 export interface SummaryPlayer extends LobbyMember {
@@ -109,4 +144,8 @@ export interface SummaryInfo {
   won: boolean;
   /** Toca elegir habilidad al continuar. */
   perkNext: boolean;
+  /** Dinero que se suma a la partida con esta ronda (si se ha superado). */
+  earnedRound: number;
+  /** Solo cuando se acaba la partida. */
+  run: RunSummary | null;
 }

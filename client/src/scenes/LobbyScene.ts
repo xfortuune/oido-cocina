@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
 import { formatDuration, getPerk, getRecipe, levelParams, newRecipesAt, ROLE_NAMES, ROLES, type Role, type RoomInfo } from '@hora-punta/shared';
 import { getIdentity, isInDiscord } from '../discord';
+import { audio } from '../audio';
 import { net, saveName, savedName, savedRecord } from '../net';
 import { CHEF_COLORS, chefKey } from '../pixel/sprites';
-import { clamp, COLORS, drawBackground, pixelPanel, txt } from '../theme';
+import { clamp, COLORS, drawBackground, pixelPanel, sceneAlive, txt } from '../theme';
 import { addAvatar, loadAvatars } from '../ui/avatars';
 import { Button } from '../ui/Button';
 
@@ -40,10 +41,12 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   create(): void {
+    audio.music('menu');
     const onRoom = (info: RoomInfo) => {
       if (info.phase === 'playing') this.scene.start('kitchen');
       else if (info.phase === 'summary' && net.summary) this.scene.start('summary');
       else if (info.phase === 'perks') this.scene.start('perks');
+      else if (info.phase === 'shop') this.scene.start('shop');
       else if (info.modo === 1) {
         // Solo: nada que repartir ni esperar.
         this.status = 'Preparando la cocina…';
@@ -88,7 +91,7 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   private build(): void {
-    if (!this.sys.isActive()) return;
+    if (!sceneAlive(this)) return;
     this.children.removeAll(true);
     const { width: W, height: H } = this.scale;
     drawBackground(this);
@@ -153,9 +156,10 @@ export class LobbyScene extends Phaser.Scene {
     const record = savedRecord();
     const lvInfo =
       `Objetivo: ${lp.goal} pedidos en ${formatDuration(lp.duration)}${fresh.length ? ` · nueva: ${fresh.join(', ')}` : ''}` +
-      (info.nivel === 1 && record ? `\nTu récord: nivel ${record} superado` : '');
+      (info.nivel === 1 && record ? `\nTu récord: nivel ${record} superado` : '') +
+      (info.nivel > 1 ? `\nDinero ${info.dinero} · ${info.mejoras.length} ${info.mejoras.length === 1 ? 'mejora' : 'mejoras'}` : '');
     txt(this, W / 2, y, lvInfo, 13 * s, { color: '#fff4dcbb', align: 'center', wordWrap: { width: W - 30 } }).setOrigin(0.5, 0);
-    y += (info.nivel === 1 && record ? 40 : 24) * s;
+    y += (info.nivel > 1 || record ? 40 : 24) * s;
 
     const missing = info.modo - info.members.length;
     if (missing > 0) {

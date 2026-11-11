@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { audio } from '../audio';
 import { COLORS, txt } from '../theme';
 
 export interface ButtonOptions {
@@ -41,6 +42,7 @@ export class Button extends Phaser.GameObjects.Container {
   /** También se usa desde los atajos de teclado. */
   press(): void {
     this.drawBg(true);
+    audio.sfx('click');
     this.scene.time.delayedCall(100, () => this.active && this.drawBg(false));
     this.opts.onPress();
   }

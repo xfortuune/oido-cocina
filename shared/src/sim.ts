@@ -15,6 +15,7 @@ import {
 } from './kitchen';
 import { levelParams, RECIPE_LEVEL, type LevelParams } from './levels';
 import { perkCount } from './perks';
+import { EXTRA_GRILL } from './shop';
 import { getRecipe, type Ingredient } from './recipes';
 
 export const CONFIG = {
@@ -164,7 +165,7 @@ export type SimEvent =
   | { type: 'trash'; cost: number; x: number; y: number }
   | { type: 'cooked'; x: number; y: number }
   | { type: 'filled'; x: number; y: number }
-  | { type: 'burnt'; x: number; y: number; what: 'carne' | 'patatas' }
+  | { type: 'burnt'; x: number; y: number; what: 'carne' | 'patatas'; cost: number }
   | { type: 'end'; reason: EndReason };
 
 export type EndReason = 'time' | 'reputation';
@@ -220,6 +221,8 @@ export class KitchenSim {
     /** Ritmo de la ronda: depende del nivel y de cuántos jugáis. */
     readonly params: LevelParams = levelParams(1, 1),
     private readonly random: () => number = Math.random,
+    /** Mejoras de la tienda compradas en esta partida (shop.ts). */
+    readonly upgrades: readonly string[] = [],
   ) {
     this.turnDuration = params.duration;
     this.level = params.level;
@@ -227,6 +230,10 @@ export class KitchenSim {
     // El primer cliente llega enseguida.
     this.spawnTimer = 2;
     this.kitchen = parseKitchen();
+    if (upgrades.includes('plancha3')) {
+      const t = this.kitchen.tiles[EXTRA_GRILL.y][EXTRA_GRILL.x];
+      t.kind = 'grill';
+    }
     for (const row of this.kitchen.tiles) {
       for (const t of row) {
         if (t.kind !== 'outside' && t.kind !== 'floor' && t.kind !== 'wall' && t.kind !== 'crate') {
@@ -394,8 +401,11 @@ export class KitchenSim {
         } else if (held?.kind === (t.kind === 'grill' ? 'raw' : 'potatoes') && !st.item) {
           st.item = held;
           st.overcook = 0;
-          st.rate = 1 + 0.25 * perkCount(p.perks, t.kind === 'grill' ? 'vuelta' : 'aceite');
-          st.burnRate = 1 + 0.6 * perkCount(p.perks, 'termometro');
+          const grill = t.kind === 'grill';
+          st.rate =
+            (1 + 0.25 * perkCount(p.perks, grill ? 'vuelta' : 'aceite')) *
+            (this.upgrades.includes(grill ? 'parrilla' : 'freidora') ? (grill ? 1.2 : 1.3) : 1);
+          st.burnRate = (1 + 0.6 * perkCount(p.perks, 'termometro')) * (this.upgrades.includes('extintor') ? 1.3 : 1);
           p.holding = null;
           st0.cooked++;
         }
@@ -405,7 +415,7 @@ export class KitchenSim {
         // Con las manos vacías: se pone un vaso a llenar, y cuando está lleno se recoge.
         if (!held && !st.item) {
           st.item = { kind: 'drink', flavor: t.flavor!, fill: 0 };
-          st.rate = 1 + 0.35 * perkCount(p.perks, 'grifo');
+          st.rate = (1 + 0.35 * perkCount(p.perks, 'grifo')) * (this.upgrades.includes('dispensador') ? 1.4 : 1);
           st0.cooked++;
         }
         else if (!held && st.item?.kind === 'drink' && st.item.fill >= 1) {
@@ -592,9 +602,10 @@ export class KitchenSim {
         if (st.overcook >= burnTime) {
           const what = grill ? 'carne' : 'patatas';
           st.item = { kind: 'burnt', what };
-          this.money -= CONFIG.burnCost;
+          const cost = this.upgrades.includes('extintor') ? 0 : CONFIG.burnCost;
+          this.money -= cost;
           this.stats.burnt++;
-          this.events.push({ type: 'burnt', x, y, what });
+          this.events.push({ type: 'burnt', x, y, what, cost });
         }
       }
     }
@@ -660,7 +671,7 @@ export class KitchenSim {
     const ratio = order.patience / order.maxPatience;
     const perfect = ratio >= CONFIG.perfectThreshold;
     const earned = Math.round(price * (0.6 + 0.4 * ratio));
-    const tip = perfect ? Math.ceil(price * 0.3) : 0;
+    const tip = perfect ? Math.ceil(price * 0.3) * (this.upgrades.includes('tarro') ? 2 : 1) : 0;
 
     this.orders = this.orders.filter((o) => o !== order);
     this.money += earned + tip;
@@ -691,6 +702,7 @@ export class KitchenSim {
     const maxPatience =
       (CONFIG.patienceBase + layers * CONFIG.patiencePerLayer + sides * CONFIG.patiencePerSide) *
       this.params.patience *
+      (this.upgrades.includes('terraza') ? 1.15 : 1) *
       lerp(1, 0.85, this.progress);
     const order: Order = {
       id: this.nextId++,

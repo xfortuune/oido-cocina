@@ -122,7 +122,7 @@ await solo.room.leave();
 
 // Partida en solitario desde el nivel 2: el bot cocina dos Chispas, supera el nivel,
 // elige habilidad, y al perder el nivel 3 vuelve al 1 sin habilidades.
-const chef = await bot('Chef', { sala: `perk-${Date.now()}`, modo: 1, nivel: 2, turno: 60 });
+const chef = await bot('Chef', { sala: `perk-${Date.now()}`, modo: 1, nivel: 2, turno: 60, grupo: `bots${Date.now()}` });
 check(chef.info.nivel === 2, 'Sala de prueba empezando en el nivel 2');
 chef.room.send('start');
 while (!chef.snap) await wait(100);
@@ -167,7 +167,19 @@ const offer = chef.info.members[0].offer;
 check(chef.info.phase === 'perks' && offer?.length === 3 && !offer.includes('labia'), `Le ofrecen 3 habilidades (${offer?.join(', ')})`);
 chef.room.send('perk', offer[0]);
 await wait(300);
-check(chef.info.phase === 'lobby' && chef.info.nivel === 3 && chef.info.members[0].perks[0] === offer[0], `Elige ${offer[0]} y pasa al nivel 3`);
+check(chef.info.phase === 'shop' && chef.info.members[0].perks[0] === offer[0], `Elige ${offer[0]} y pasa a la tienda`);
+const dinero = chef.info.dinero;
+check(dinero > 0 && dinero === chef.summary.earnedRound, `La tienda tiene el dinero de la ronda (${dinero})`);
+chef.room.send('buy', 'plancha3');
+await wait(200);
+check(dinero < 45 && !chef.info.mejoras.includes('plancha3') && chef.info.dinero === dinero, 'Sin dinero suficiente no se compra la tercera plancha');
+chef.room.send('buy', 'dispensador');
+await wait(200);
+const bought = chef.info.mejoras.includes('dispensador');
+check(bought === (dinero >= 25) && chef.info.dinero === (bought ? dinero - 25 : dinero), `Dispensador doble (25): ${bought ? 'comprado' : 'no alcanza'}`);
+chef.room.send('ready');
+await wait(300);
+check(chef.info.phase === 'lobby' && chef.info.nivel === 3, 'Listo: a la sala, nivel 3');
 chef.summary = null;
 chef.room.send('start');
 await wait(300);
@@ -175,5 +187,9 @@ check(chef.snap.players[0].perks[0] === offer[0], 'La habilidad le acompaña en 
 while (!chef.summary) await wait(500);
 await wait(300);
 check(!chef.summary.passed && chef.info.nivel === 1 && chef.info.members[0].perks.length === 0, 'Pierde el nivel 3: vuelta al nivel 1 sin habilidades');
+check(chef.info.dinero === 0 && chef.info.mejoras.length === 0, 'Y sin dinero ni mejoras');
+const run = chef.summary.run;
+check(run?.levelsPassed === 2 && run.served >= 2 && run.players[0].perks[0] === offer[0], `Resumen de la partida: ${run?.levelsPassed} niveles, ${run?.served} hamburguesas`);
+check(run?.position === 1 && run.ranking[0].names[0] === 'Chef', 'Entra el primero en el ranking del grupo');
 await chef.room.leave();
 process.exit(0);

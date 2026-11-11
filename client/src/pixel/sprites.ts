@@ -378,6 +378,16 @@ function generateIcons(scene: Phaser.Scene): void {
   paint(scene, 'icon_star', ['...kk...', '..kyyk..', 'kkkyykkk', 'kyyyyyyk', '.kyyyyk.', '.kyyyyk.', 'kyykkyyk', 'kkk..kkk'], pal);
   paint(scene, 'icon_clock', ['..kkkk..', '.kbbbbk.', 'kbbbkbbk', 'kbbbkbbk', 'kbbbkkbk', 'kbbbbbbk', '.kbbbbk.', '..kkkk..'], pal);
   paint(scene, 'icon_burger', ['..kkkk..', '.kyyyyk.', 'kkkkkkkk', 'krrrrrrk', 'kkkkkkkk', '.kyyyyk.', '..kkkk..', '........'], { ...pal, y: '#e8a04a', r: '#7a3e1d' });
+  // Altavoz: con música, solo efectos, y en silencio.
+  const spk = ['....k....', '...kk....', 'kkkbk....', 'kbbbk....', 'kbbbk....', 'kkkbk....', '...kk....', '....k....'];
+  const withRight = (right: string[]) => spk.map((r, i) => r.slice(0, 5) + right[i]);
+  paint(scene, 'icon_sound_todo', withRight(['..y.', 'y..y', '.y.y', '.y.y', '.y.y', '.y.y', 'y..y', '..y.']), pal, 9);
+  paint(scene, 'icon_sound_efectos', withRight(['....', '.c..', '..c.', '..c.', '..c.', '..c.', '.c..', '....']), pal, 9);
+  paint(scene, 'icon_sound_nada', withRight(['....', 'r..r', '.rr.', '.rr.', 'r..r', '....', '....', '....']), pal, 9);
+  // Gotita de sudor (clientes impacientes) y destello (servir).
+  paint(scene, 'icon_sweat', ['.c.', 'ccc', 'cbc', '.c.'], pal);
+  paint(scene, 'icon_spark', ['..y..', '..y..', 'yybyy', '..y..', '..y..'], pal);
+  paint(scene, 'icon_confetti', ['yy', 'yy'], { y: '#ffffff' });
   paint(scene, 'icon_smoke', ['..gg..', '.gwwg.', 'gwwwwg', '.gwwg.', '..gg..'], BASE);
   // Números de 3x5 para los bocadillos de los clientes.
   DIGITS.forEach((rows, n) => paint(scene, `digit_${n}`, rows, { k: '#2b1d14' }));

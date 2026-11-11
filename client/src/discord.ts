@@ -30,7 +30,7 @@ function browserIdentity(name: string): Identity {
   const turno = Number(params.get('turno'));
   return {
     inDiscord: false,
-    join: { sala: params.get('sala') || 'local', name, ...(turno > 0 ? { turno } : {}) },
+    join: { sala: params.get('sala') || 'local', name, grupo: params.get('grupo') || 'navegador', ...(turno > 0 ? { turno } : {}) },
   };
 }
 
@@ -67,6 +67,7 @@ async function discordIdentity(): Promise<Identity> {
     inDiscord: true,
     // Una sala por instancia de la Actividad: todos los del canal de voz en la misma partida.
     // El servidor vuelve a comprobar el token y saca de ahí tu nombre y avatar.
-    join: { sala: sdk.instanceId, name, accessToken: access_token },
+    // El ranking es por servidor de Discord (o por canal, en mensajes directos).
+    join: { sala: sdk.instanceId, name, accessToken: access_token, grupo: sdk.guildId ?? sdk.channelId ?? 'discord' },
   };
 }

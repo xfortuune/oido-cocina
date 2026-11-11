@@ -19,6 +19,8 @@ export type PerkId =
 export interface Perk {
   id: PerkId;
   name: string;
+  /** Nombre corto para el HUD. */
+  short: string;
   description: string;
   /** Puestos para los que sirve (vacío: para todos). */
   roles: Role[];
@@ -29,16 +31,16 @@ export interface Perk {
 }
 
 export const PERKS: Perk[] = [
-  { id: 'zapatillas', name: 'Zapatillas rápidas', description: 'Te mueves un 12 % más rápido.', roles: [], max: 2, color: 0x4aa3df },
-  { id: 'vuelta', name: 'Vuelta y vuelta', description: 'La carne que pones en la plancha se hace un 25 % antes.', roles: ['plancha'], max: 2, color: 0xc0392b },
-  { id: 'termometro', name: 'Termómetro', description: 'Lo que pones en la plancha o la freidora tarda un 60 % más en quemarse.', roles: ['plancha', 'freidora'], max: 2, color: 0xe67e22 },
-  { id: 'aceite', name: 'Aceite nuevo', description: 'Las patatas que echas se fríen un 25 % antes.', roles: ['freidora'], max: 2, color: 0xf1c40f },
-  { id: 'grifo', name: 'Grifo a presión', description: 'Los vasos que pones se llenan un 35 % antes.', roles: ['freidora'], max: 2, color: 0x9b59b6 },
-  { id: 'labia', name: 'Labia', description: 'Los clientes a los que tomas nota tienen un 20 % más de paciencia.', roles: ['caja'], max: 2, color: 0x27ae60 },
-  { id: 'simpatia', name: 'Simpatía', description: 'Cada parte que entregas devuelve al cliente un 12 % de paciencia.', roles: ['caja'], max: 2, color: 0x2ecc71 },
-  { id: 'bandeja', name: 'Bandeja', description: 'Con comida en las manos, coger de una caja de ingredientes lo apila encima.', roles: ['montaje'], max: 1, color: 0xd35400 },
-  { id: 'disculpa', name: 'Disculpa a tiempo', description: 'Tu primer fallo de cada ronda no cuesta reputación ni dinero.', roles: [], max: 2, color: 0x7f8c8d },
-  { id: 'clientela', name: 'Clientela fiel', description: 'El equipo empieza cada ronda con 10 de reputación más.', roles: [], max: 2, color: 0xff8a3d },
+  { id: 'zapatillas', short: 'Zapatillas', name: 'Zapatillas rápidas', description: 'Te mueves un 12 % más rápido.', roles: [], max: 2, color: 0x4aa3df },
+  { id: 'vuelta', short: 'Vuelta y vuelta', name: 'Vuelta y vuelta', description: 'La carne que pones en la plancha se hace un 25 % antes.', roles: ['plancha'], max: 2, color: 0xc0392b },
+  { id: 'termometro', short: 'Termómetro', name: 'Termómetro', description: 'Lo que pones en la plancha o la freidora tarda un 60 % más en quemarse.', roles: ['plancha', 'freidora'], max: 2, color: 0xe67e22 },
+  { id: 'aceite', short: 'Aceite', name: 'Aceite nuevo', description: 'Las patatas que echas se fríen un 25 % antes.', roles: ['freidora'], max: 2, color: 0xf1c40f },
+  { id: 'grifo', short: 'Grifo', name: 'Grifo a presión', description: 'Los vasos que pones se llenan un 35 % antes.', roles: ['freidora'], max: 2, color: 0x9b59b6 },
+  { id: 'labia', short: 'Labia', name: 'Labia', description: 'Los clientes a los que tomas nota tienen un 20 % más de paciencia.', roles: ['caja'], max: 2, color: 0x27ae60 },
+  { id: 'simpatia', short: 'Simpatía', name: 'Simpatía', description: 'Cada parte que entregas devuelve al cliente un 12 % de paciencia.', roles: ['caja'], max: 2, color: 0x2ecc71 },
+  { id: 'bandeja', short: 'Bandeja', name: 'Bandeja', description: 'Con comida en las manos, coger de una caja de ingredientes lo apila encima.', roles: ['montaje'], max: 1, color: 0xd35400 },
+  { id: 'disculpa', short: 'Disculpa', name: 'Disculpa a tiempo', description: 'Tu primer fallo de cada ronda no cuesta reputación ni dinero.', roles: [], max: 2, color: 0x7f8c8d },
+  { id: 'clientela', short: 'Clientela', name: 'Clientela fiel', description: 'El equipo empieza cada ronda con 10 de reputación más.', roles: [], max: 2, color: 0xff8a3d },
 ];
 
 const PERK_BY_ID = new Map(PERKS.map((p) => [p.id, p]));

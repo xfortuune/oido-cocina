@@ -9,6 +9,9 @@ import {
   perkCount,
   PERK_EVERY,
   rollPerkOffer,
+  getUpgrade,
+  upgradePrice,
+  type RunSummary,
   ROLE_PRESETS,
   MAX_PLAYERS,
   mvpScore,
@@ -23,6 +26,7 @@ import {
   type SummaryInfo,
 } from '@hora-punta/shared';
 import { discordConfig, fetchUser, type DiscordUser } from './discord.ts';
+import { addRanking, cleanGroup, getRanking } from './ranking.ts';
 
 const GUEST = { guest: true } as const;
 
@@ -50,6 +54,13 @@ export class KitchenRoom extends Room {
   /** Habilidades de la partida por jugador (id de Discord, o de sesión en el navegador), por si sale y vuelve a entrar. */
   private runPerks = new Map<string, string[]>();
   private memberKeys = new Map<string, string>();
+  /** Dinero y mejoras de la tienda de la partida en curso. */
+  private dinero = 0;
+  private mejoras: string[] = [];
+  /** Totales de la partida en curso, para el resumen final. */
+  private run = newRun();
+  /** Grupo del ranking (lo trae el primero que entra). */
+  private grupo = '';
   private members = new Map<string, LobbyMember>();
   private sim: KitchenSim | null = null;
   private summary: SummaryInfo | null = null;
@@ -61,6 +72,7 @@ export class KitchenRoom extends Room {
     const turno = Number(options.turno);
     if (turno > 0) this.turnDuration = Math.max(10, Math.min(300, turno));
     if (options.nivel) this.nivel = clampLevel(options.nivel);
+    this.grupo = cleanGroup(options.grupo);
 
     this.onMessage('input', (client, msg: InputMessage) => this.applyInput(client.sessionId, msg));
     this.onMessage('interact', (client, msg: InputMessage) => {
@@ -92,15 +104,25 @@ export class KitchenRoom extends Room {
       this.broadcastRoom();
     });
     this.onMessage('start', () => this.startTurn());
+    // Tras el resumen: habilidades (cada 2 niveles), tienda y sala. Si se ha acabado la partida, a la sala.
     this.onMessage('lobby', () => {
       if (this.phase !== 'summary') return;
-      const perkNext = this.summary?.perkNext;
+      const { perkNext = false, passed = false, won = false } = this.summary ?? {};
       this.summary = null;
       if (perkNext) this.offerPerks();
+      else if (passed && !won) this.openShop();
       else this.phase = 'lobby';
       this.broadcastRoom();
     });
     this.onMessage('perk', (client, id: string) => this.pickPerk(client.sessionId, String(id)));
+    this.onMessage('buy', (_client, id: string) => this.buy(String(id)));
+    this.onMessage('ready', (client) => {
+      const m = this.members.get(client.sessionId);
+      if (this.phase !== 'shop' || !m) return;
+      m.ready = !m.ready;
+      this.checkShopDone();
+      this.broadcastRoom();
+    });
 
     this.setSimulationInterval((dt) => this.tick(dt), TICK_MS);
   }
@@ -139,6 +161,7 @@ export class KitchenRoom extends Room {
       avatar: user?.avatar ?? null,
       perks,
       offer: null,
+      ready: false,
     };
     this.members.set(client.sessionId, member);
     if (this.phase !== 'playing') this.assignRoles();
@@ -160,8 +183,9 @@ export class KitchenRoom extends Room {
     this.sim?.removePlayer(client.sessionId);
     this.lastInput.delete(client.sessionId);
     this.memberKeys.delete(client.sessionId);
-    if (this.phase === 'perks') {
+    if (this.phase === 'perks' || this.phase === 'shop') {
       this.checkPerksDone();
+      this.checkShopDone();
       this.broadcastRoom();
       return;
     }
@@ -211,14 +235,14 @@ export class KitchenRoom extends Room {
     const covered = new Set([...this.members.values()].flatMap((m) => m.roles));
     if (!ROLES.every((r) => covered.has(r)) || this.members.size < this.modo) return;
 
-    const sim = new KitchenSim(levelParams(this.nivel, this.modo));
+    const sim = new KitchenSim(levelParams(this.nivel, this.modo), Math.random, this.mejoras);
     sim.moveOnTick = false;
     sim.needsCaja = this.modo > 1;
     if (this.turnDuration) sim.turnDuration = this.turnDuration;
     for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles, m.perks);
     // Clientela fiel: más reputación al empezar.
     const fans = [...this.members.values()].reduce((n, m) => n + perkCount(m.perks, 'clientela'), 0);
-    sim.reputation += 10 * fans;
+    sim.reputation += 10 * fans + (this.mejoras.includes('resenas') ? 15 : 0);
     this.sim = sim;
     this.summary = null;
     this.phase = 'playing';
@@ -253,8 +277,28 @@ export class KitchenRoom extends Room {
       return { ...m, perks: [...m.perks], stats, score: mvpScore(stats) };
     });
     const best = [...summaryPlayers].sort((a, b) => b.score - a.score)[0];
-    if (passed && !won) this.nivel = sim.level + 1;
-    else this.resetRun();
+
+    // Totales de la partida
+    const run = this.run;
+    run.served += sim.stats.served;
+    run.perfect += sim.stats.perfect;
+    run.earned += Math.max(0, sim.money);
+    run.seconds += sim.time;
+    if (passed) run.levelsPassed = sim.level;
+    for (const p of summaryPlayers) {
+      const key = this.memberKeys.get(p.id) ?? p.id;
+      const prev = run.players.get(key);
+      run.players.set(key, { ...p, score: (prev?.score ?? 0) + p.score });
+    }
+    const earnedRound = passed && !won ? Math.max(0, sim.money) : 0;
+    let runSummary: RunSummary | null = null;
+    if (passed && !won) {
+      this.nivel = sim.level + 1;
+      this.dinero += earnedRound;
+    } else {
+      runSummary = this.finishRun();
+      this.resetRun();
+    }
     this.summary = {
       stats: sim.stats,
       money: sim.money,
@@ -268,6 +312,8 @@ export class KitchenRoom extends Room {
       stars: passed ? levelStars(sim.stats.served, sim.goal) : 0,
       won,
       perkNext,
+      earnedRound,
+      run: runSummary,
     };
     this.sim = null;
     this.phase = 'summary';
@@ -275,8 +321,40 @@ export class KitchenRoom extends Room {
     this.broadcastRoom();
   }
 
-  /** Partida perdida (o ganada): vuelta al nivel 1 sin habilidades. */
+  /** Resumen de la partida entera y entrada en el ranking del grupo. */
+  private finishRun(): RunSummary {
+    const run = this.run;
+    const players = [...run.players.values()];
+    const mvp = [...players].sort((a, b) => b.score - a.score)[0];
+    const position =
+      run.levelsPassed > 0
+        ? addRanking(this.grupo, {
+            names: players.map((p) => p.name),
+            level: run.levelsPassed,
+            served: run.served,
+            players: this.modo,
+            date: new Date().toISOString(),
+          })
+        : null;
+    return {
+      levelsPassed: run.levelsPassed,
+      served: run.served,
+      earned: run.earned,
+      perfect: run.perfect,
+      seconds: Math.round(run.seconds),
+      players,
+      mvpId: players.length > 1 ? (mvp?.id ?? null) : null,
+      mejoras: [...this.mejoras],
+      ranking: getRanking(this.grupo).slice(0, 5),
+      position,
+    };
+  }
+
+  /** Partida perdida (o ganada): vuelta al nivel 1 sin habilidades, dinero ni mejoras. */
   private resetRun(): void {
+    this.run = newRun();
+    this.dinero = 0;
+    this.mejoras = [];
     this.nivel = 1;
     this.runPerks.clear();
     for (const [id, m] of this.members) {
@@ -305,10 +383,32 @@ export class KitchenRoom extends Room {
     this.broadcastRoom();
   }
 
-  /** Cuando todos han elegido, a la sala. */
+  /** Cuando todos han elegido, a la tienda. */
   private checkPerksDone(): void {
     if (this.phase !== 'perks') return;
-    if ([...this.members.values()].every((m) => !m.offer)) this.phase = 'lobby';
+    if ([...this.members.values()].every((m) => !m.offer)) this.openShop();
+  }
+
+  private openShop(): void {
+    this.phase = 'shop';
+    for (const m of this.members.values()) m.ready = false;
+  }
+
+  private buy(id: string): void {
+    const u = getUpgrade(id);
+    if (this.phase !== 'shop' || !u || this.mejoras.includes(u.id)) return;
+    const price = upgradePrice(u, this.modo);
+    if (this.dinero < price) return;
+    this.dinero -= price;
+    this.mejoras.push(u.id);
+    this.broadcast('bought', u.id);
+    this.broadcastRoom();
+  }
+
+  /** Cuando todos están listos, a la sala (en solitario, a la cocina directamente). */
+  private checkShopDone(): void {
+    if (this.phase !== 'shop') return;
+    if ([...this.members.values()].every((m) => m.ready)) this.phase = 'lobby';
   }
 
   private roomInfo(): RoomInfo {
@@ -318,10 +418,24 @@ export class KitchenRoom extends Room {
       modo: this.modo,
       members: [...this.members.values()],
       nivel: this.nivel,
+      dinero: this.dinero,
+      mejoras: this.mejoras,
     };
   }
 
   private broadcastRoom(): void {
     this.broadcast('room', this.roomInfo());
   }
+}
+
+function newRun() {
+  return {
+    levelsPassed: 0,
+    served: 0,
+    perfect: 0,
+    earned: 0,
+    seconds: 0,
+    /** Por jugador (clave de Discord o sesión): sus datos y la suma de sus puntuaciones. */
+    players: new Map<string, LobbyMember & { score: number }>(),
+  };
 }

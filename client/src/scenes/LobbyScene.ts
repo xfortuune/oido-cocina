@@ -7,6 +7,7 @@ import { CHEF_COLORS, chefKey } from '../pixel/sprites';
 import { clamp, COLORS, drawBackground, pixelPanel, sceneAlive, txt } from '../theme';
 import { addAvatar, loadAvatars } from '../ui/avatars';
 import { Button } from '../ui/Button';
+import { NameInput } from '../ui/NameInput';
 
 /** Textura del puesto que representa cada rol en su tarjeta. */
 const ROLE_TILES: Record<Role, string> = {
@@ -31,6 +32,8 @@ export class LobbyScene extends Phaser.Scene {
   private status = '';
   /** Modo elegido en el menú (solo cuenta al crear la sala). */
   private modo = 2;
+  /** Cuadro para cambiar el nombre (null si está cerrado). */
+  private nameInput: NameInput | null = null;
 
   constructor() {
     super('lobby');
@@ -65,6 +68,7 @@ export class LobbyScene extends Phaser.Scene {
       net.off('room', onRoom);
       net.off('left', onLeft);
       this.scale.off('resize', this.build, this);
+      this.closeNameDialog();
     });
 
     if (net.connected && net.info) {
@@ -103,6 +107,9 @@ export class LobbyScene extends Phaser.Scene {
     y += 46 * s;
 
     if (!info || info.modo === 1) {
+      // Sin sala no hay nombre que cambiar.
+      this.nameInput?.destroy();
+      this.nameInput = null;
       txt(this, W / 2, H / 2, this.status, 18 * s, { color: '#fff4dc', align: 'center', wordWrap: { width: W - 40 } }).setOrigin(0.5);
       if (!net.connected && !this.status.startsWith('Conectando')) {
         new Button(this, W / 2, H / 2 + 70 * s, {
@@ -251,12 +258,7 @@ export class LobbyScene extends Phaser.Scene {
       color: COLORS.blue,
       label: 'Cambiar nombre',
       fontSize: 18 * s,
-      onPress: () => {
-        const name = window.prompt('¿Cómo te llamas?', net.me?.name ?? '')?.trim();
-        if (!name) return;
-        saveName(name.slice(0, 20));
-        net.rename(name.slice(0, 20));
-      },
+      onPress: () => this.openNameDialog(),
     });
     new Button(this, bx(buttons - 1), btnY, {
       w: btnW,
@@ -276,6 +278,64 @@ export class LobbyScene extends Phaser.Scene {
         wordWrap: { width: W - 30 },
       }).setOrigin(0.5, 0);
     }
+    if (this.nameInput) this.drawNameDialog(W, H, s);
+  }
+
+  // ---------------------------------------------------------------- cambiar nombre
+
+  private openNameDialog(): void {
+    if (this.nameInput) return;
+    this.nameInput = new NameInput(net.me?.name ?? '', () => this.saveName(), () => this.closeNameDialog());
+    this.build();
+  }
+
+  private closeNameDialog(): void {
+    if (!this.nameInput) return;
+    this.nameInput.destroy();
+    this.nameInput = null;
+    if (sceneAlive(this)) this.build();
+  }
+
+  private saveName(): void {
+    const name = this.nameInput?.value.slice(0, 20);
+    if (!name) {
+      // Vacío: que lo vea y siga escribiendo.
+      this.nameInput?.el.focus();
+      return;
+    }
+    saveName(name);
+    net.rename(name);
+    this.closeNameDialog();
+  }
+
+  /** Panel del juego con el campo de texto encima (se vuelve a dibujar con cada cambio de la sala). */
+  private drawNameDialog(W: number, H: number, s: number): void {
+    const depth = 100;
+    this.add
+      .rectangle(0, 0, W, H, 0x1a110b, 0.72)
+      .setOrigin(0)
+      .setDepth(depth)
+      .setInteractive()
+      .on('pointerdown', () => this.nameInput?.el.focus());
+    const boxW = Math.min(W - 32, 380);
+    const boxH = 230 * s;
+    const x0 = W / 2 - boxW / 2;
+    const y0 = Math.max(16, H * 0.3 - boxH / 2);
+    const g = this.add.graphics().setDepth(depth);
+    pixelPanel(g, x0, y0, boxW, boxH);
+    this.add.image(x0 + 30 * s, y0 + 36 * s, chefKey(net.me?.look ?? net.me?.color ?? 0, 'down', 0)).setScale(Math.max(2, Math.round(2.5 * s))).setDepth(depth + 1);
+    txt(this, W / 2 + 14 * s, y0 + 18 * s, '¿Cómo te llamas?', 22 * s, { color: '#ff8a3d', stroke: '#2b1d14', strokeThickness: 5 })
+      .setOrigin(0.5, 0)
+      .setDepth(depth + 1);
+    const fieldH = 48 * s;
+    this.nameInput!.place(this, x0 + 20, y0 + 70 * s, boxW - 40, fieldH, 20 * s);
+    txt(this, W / 2, y0 + 70 * s + fieldH + 6, 'Máximo 20 letras · Enter para guardar', 11 * s, { color: '#6b5a4a' })
+      .setOrigin(0.5, 0)
+      .setDepth(depth + 1);
+    const bw = (boxW - 52) / 2;
+    const by = y0 + boxH - 36 * s;
+    new Button(this, W / 2 - bw / 2 - 6, by, { w: bw, h: 46 * s, color: 0x8a7a6a, label: 'Cancelar', fontSize: 17 * s, onPress: () => this.closeNameDialog() }).setDepth(depth + 1);
+    new Button(this, W / 2 + bw / 2 + 6, by, { w: bw, h: 46 * s, color: COLORS.green, label: 'Guardar', fontSize: 17 * s, onPress: () => this.saveName() }).setDepth(depth + 1);
   }
 }
 

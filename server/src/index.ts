@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { Server, WebSocketTransport } from 'colyseus';
@@ -19,6 +19,7 @@ try {
 const production = process.argv.includes('--produccion');
 const port = Number(process.env.SERVER_PORT ?? (production ? process.env.PORT : undefined) ?? 2567);
 const clientDist = fileURLToPath(new URL('../../client/dist', import.meta.url));
+const GAME_VERSION = (JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
 const server = new Server({
   transport: new WebSocketTransport(),
@@ -27,7 +28,8 @@ const server = new Server({
     app.use(express.json());
 
     app.get('/health', (_req, res) => {
-      res.json({ ok: true });
+      // Commit desplegado (Railway lo da en RAILWAY_GIT_COMMIT_SHA), para comprobar qué versión está en marcha.
+      res.json({ ok: true, version: GAME_VERSION, commit: (process.env.RAILWAY_GIT_COMMIT_SHA ?? '').slice(0, 7) || null });
     });
 
     // Paso del login de la Actividad: el cliente manda el código de authorize() y recibe el token.

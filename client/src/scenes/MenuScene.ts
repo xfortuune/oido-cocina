@@ -105,6 +105,8 @@ export class MenuScene extends Phaser.Scene {
       onPress: () => this.scene.start('ranking'),
     });
     addSoundToggle(this, W - 24, 24, 3);
+    // Versión, abajo a la izquierda (para saber qué hay desplegado).
+    txt(this, 8, H - 6, __VERSION__, 11, { color: '#fff4dc66' }).setOrigin(0, 1);
 
     // En PC, también con las teclas 1-4.
     this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {

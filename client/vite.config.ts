@@ -1,4 +1,20 @@
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { defineConfig, loadEnv } from 'vite';
+
+/** Versión y commit con los que se compila (para comprobar qué hay desplegado). */
+function buildVersion(): string {
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+  let commit = process.env.RAILWAY_GIT_COMMIT_SHA ?? '';
+  if (!commit) {
+    try {
+      commit = execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    } catch {
+      commit = '';
+    }
+  }
+  return commit ? `v${version} · ${commit.slice(0, 7)}` : `v${version}`;
+}
 
 export default defineConfig(({ mode }) => {
   // El .env está en la raíz del proyecto, compartido con el servidor.
@@ -7,6 +23,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     envDir: '..',
+    define: { __VERSION__: JSON.stringify(buildVersion()) },
     // Phaser ocupa ~1,5 MB minificado; no merece la pena trocearlo.
     build: { chunkSizeWarningLimit: 2000 },
     server: {

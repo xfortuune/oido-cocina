@@ -7,6 +7,7 @@ import {
   ROOM_NAME,
   type ChefLook,
   type EmoteMessage,
+  type Estilo,
   type InputMessage,
   type JoinOptions,
   type LobbyMember,
@@ -132,6 +133,11 @@ class Net extends Phaser.Events.EventEmitter {
 
   toggleReady(): void {
     this.room?.send('ready');
+  }
+
+  /** Modo rol o libre (solo en la sala, en el nivel 1). */
+  setEstilo(estilo: Estilo): void {
+    this.room?.send('estilo', estilo);
   }
 
   /** Pausa o reanuda la ronda (para todo el grupo). */

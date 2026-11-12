@@ -46,7 +46,14 @@ export function clampLevel(n: unknown, max = MAX_LEVEL): number {
   return Number.isFinite(v) ? Math.max(1, Math.min(max, MAX_LEVEL, v)) : 1;
 }
 
-export function levelParams(level: number, players: number): LevelParams {
+/** Modo de juego: «rol» (cada uno sus puestos) o «libre» (todos pueden hacerlo todo). */
+export type Estilo = 'rol' | 'libre';
+export const ESTILOS: Estilo[] = ['rol', 'libre'];
+export const ESTILO_NAMES: Record<Estilo, string> = { rol: 'Modo rol', libre: 'Modo libre' };
+/** En el modo libre los clientes llegan antes, porque es más fácil de coordinar. */
+export const LIBRE_RUSH = 1.2;
+
+export function levelParams(level: number, players: number, estilo: Estilo = 'rol'): LevelParams {
   level = clampLevel(level);
   players = Math.max(1, Math.min(4, Math.round(players) || 1));
   // 0 en el nivel 1, 1 en el 20.
@@ -54,7 +61,7 @@ export function levelParams(level: number, players: number): LevelParams {
 
   const duration = 5 * Math.round((90 + 90 * t) / 5);
   // Al principio la dificultad sube despacio y se acelera en los últimos niveles.
-  const base = lerp(24, 8, Math.pow(t, 0.85)) / CROWD[players];
+  const base = lerp(24, 8, Math.pow(t, 0.85)) / CROWD[players] / (estilo === 'libre' && players > 1 ? LIBRE_RUSH : 1);
   const spawnStart = base * 1.15;
   const spawnEnd = base * 0.85;
   const maxOrders = Math.max(2, Math.min(5, Math.round(lerp(2, 5, t) + (players - 1) * 0.35)));

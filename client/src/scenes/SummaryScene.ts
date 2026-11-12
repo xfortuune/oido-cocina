@@ -223,7 +223,7 @@ export class SummaryScene extends Phaser.Scene {
         const mine = run.position === i + 1;
         const color = mine ? '#c0392b' : '#2b1d14';
         txt(this, W / 2 - boxW / 2 + 12, ry, `${i + 1}.`, fs * 0.9, { color });
-        const names = txt(this, W / 2 - boxW / 2 + 38, ry, e.names.join(', '), fs * 0.9, { color });
+        const names = txt(this, W / 2 - boxW / 2 + 38, ry, `${e.names.join(', ')}${e.estilo === 'libre' ? ' (libre)' : ''}`, fs * 0.9, { color });
         const maxW = boxW - 38 - 90;
         if (names.width > maxW) names.setScale(maxW / names.width);
         txt(this, W / 2 + boxW / 2 - 12, ry, `nivel ${e.level}`, fs * 0.9, { color }).setOrigin(1, 0);

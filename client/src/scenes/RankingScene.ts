@@ -78,7 +78,7 @@ export class RankingScene extends Phaser.Scene {
       const ry = y + 28 + i * rh;
       const medal = i === 0 ? '#d4a017' : i === 1 ? '#8a8a8a' : i === 2 ? '#b0703a' : '#2b1d14';
       txt(this, W / 2 - boxW / 2 + 12, ry, `${i + 1}.`, fs, { color: medal });
-      const names = txt(this, W / 2 - boxW / 2 + 42, ry, e.names.join(', '), fs * 0.92);
+      const names = txt(this, W / 2 - boxW / 2 + 42, ry, `${e.names.join(', ')}${e.estilo === 'libre' ? ' (libre)' : ''}`, fs * 0.92);
       const maxW = boxW - 42 - 110;
       if (names.width > maxW) names.setScale(maxW / names.width);
       txt(this, W / 2 + boxW / 2 - 12, ry, `${e.level} · ${e.served}`, fs).setOrigin(1, 0);

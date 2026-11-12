@@ -2,6 +2,8 @@ import { Room, ServerError, type Client } from 'colyseus';
 import {
   clampLevel,
   clampModo,
+  ESTILOS,
+  type Estilo,
   KitchenSim,
   levelParams,
   levelStars,
@@ -70,6 +72,8 @@ export class KitchenRoom extends Room {
   private lastEmote = new Map<string, number>();
   /** Nombre de quien ha pausado la ronda (null si no está en pausa). La pausa es para todos. */
   private pausedBy: string | null = null;
+  /** Modo rol (cada uno sus puestos) o libre (todos lo hacen todo, sin caja). */
+  private estilo: Estilo = 'rol';
 
   onCreate(options: JoinOptions): void {
     this.sala = String(options.sala ?? 'local');
@@ -80,6 +84,14 @@ export class KitchenRoom extends Room {
     this.grupo = cleanGroup(options.grupo);
 
     this.onMessage('input', (client, msg: InputMessage) => this.applyInput(client.sessionId, msg));
+    // Modo de juego: se elige en la sala antes de empezar la partida (nivel 1) y se mantiene hasta perder.
+    this.onMessage('estilo', (_client, value: string) => {
+      const estilo = ESTILOS.find((e) => e === value);
+      if (!estilo || this.phase !== 'lobby' || this.nivel !== 1 || estilo === this.estilo) return;
+      this.estilo = estilo;
+      this.assignRoles();
+      this.broadcastRoom();
+    });
     this.onMessage('pause', (client, on: boolean) => {
       if (this.phase !== 'playing') return;
       const name = this.members.get(client.sessionId)?.name ?? '?';
@@ -190,6 +202,8 @@ export class KitchenRoom extends Room {
     };
     this.members.set(client.sessionId, member);
     if (this.phase !== 'playing') this.assignRoles();
+    // En el modo libre, quien entra a mitad de ronda también puede hacerlo todo.
+    else if (this.estilo === 'libre') member.roles = [...ROLES];
 
     // Quien entra a mitad de turno ayuda llevando cosas hasta el siguiente turno.
     this.sim?.addPlayer(member.id, member.name, member.color, member.roles, member.perks, member.look);
@@ -223,6 +237,7 @@ export class KitchenRoom extends Room {
     for (const role of leaving?.roles ?? []) {
       const heir = [...this.members.values()].sort((a, b) => a.roles.length - b.roles.length)[0];
       if (!heir) break;
+      if (heir.roles.includes(role)) continue;
       heir.roles.push(role);
       const p = this.sim?.players.get(heir.id);
       if (p) p.roles = [...heir.roles];
@@ -238,6 +253,11 @@ export class KitchenRoom extends Room {
     const members = [...this.members.values()];
     if (members.length === 0) return;
     for (const m of members) m.roles = [];
+    // Modo libre: todos los puestos para todos.
+    if (this.estilo === 'libre') {
+      for (const m of members) m.roles = [...ROLES];
+      return;
+    }
     ROLE_PRESETS[this.modo].forEach((group, i) => {
       const owner = members[i] ?? members[0];
       owner.roles.push(...group);
@@ -246,7 +266,7 @@ export class KitchenRoom extends Room {
   }
 
   private claim(id: string, role: Role): void {
-    if (this.phase === 'playing' || !ROLES.includes(role)) return;
+    if (this.phase === 'playing' || this.estilo === 'libre' || !ROLES.includes(role)) return;
     const me = this.members.get(id);
     if (!me || me.roles.includes(role)) return;
     for (const m of this.members.values()) m.roles = m.roles.filter((r) => r !== role);
@@ -260,9 +280,10 @@ export class KitchenRoom extends Room {
     const covered = new Set([...this.members.values()].flatMap((m) => m.roles));
     if (!ROLES.every((r) => covered.has(r)) || this.members.size < this.modo) return;
 
-    const sim = new KitchenSim(levelParams(this.nivel, this.modo), Math.random, this.mejoras);
+    const sim = new KitchenSim(levelParams(this.nivel, this.modo, this.estilo), Math.random, this.mejoras);
     sim.moveOnTick = false;
-    sim.needsCaja = this.modo > 1;
+    // En el modo libre no hay que tomar nota: los clientes piden directamente.
+    sim.needsCaja = this.modo > 1 && this.estilo === 'rol';
     if (this.turnDuration) sim.turnDuration = this.turnDuration;
     for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles, m.perks, m.look);
     // Clientela fiel: más reputación al empezar.
@@ -360,6 +381,7 @@ export class KitchenRoom extends Room {
             level: run.levelsPassed,
             served: run.served,
             players: this.modo,
+            estilo: this.estilo,
             date: new Date().toISOString(),
           })
         : null;
@@ -394,7 +416,8 @@ export class KitchenRoom extends Room {
   private offerPerks(): void {
     this.phase = 'perks';
     for (const m of this.members.values()) {
-      const offer = rollPerkOffer(m.perks, m.roles, this.modo === 1);
+      // Sin caja (solo o modo libre), Labia no sirve.
+      const offer = rollPerkOffer(m.perks, m.roles, this.modo === 1 || this.estilo === 'libre');
       m.offer = offer.length ? offer : null;
     }
     this.checkPerksDone();
@@ -448,6 +471,7 @@ export class KitchenRoom extends Room {
       dinero: this.dinero,
       mejoras: this.mejoras,
       paused: this.pausedBy,
+      estilo: this.estilo,
     };
   }
 

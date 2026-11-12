@@ -131,6 +131,27 @@ await wait(300);
 check(c1.info.phase === 'playing', 'Con los 3 ya empieza');
 for (const b of [c1, c2, c3]) await b.room.leave();
 
+// Modo libre: todos pueden hacerlo todo y no hay que tomar nota
+const salaL = `libre-${Date.now()}`;
+const l1 = await bot('Lola', { sala: salaL, modo: 2 });
+const l2 = await bot('Leo', { sala: salaL, modo: 2 });
+check(l1.info.estilo === 'rol', 'Por defecto, modo rol');
+l2.room.send('estilo', 'libre');
+await wait(300);
+check(l1.info.estilo === 'libre' && l1.info.members.every((m) => m.roles.length === 4), 'Leo pone el modo libre: los dos tienen toda la cocina');
+l1.room.send('claim', 'plancha');
+await wait(200);
+check(l1.info.members.every((m) => m.roles.length === 4), 'En modo libre no se reparten puestos');
+l1.room.send('start');
+while (!l1.snap?.orders.length) await wait(100);
+check(l1.snap.orders.every((o) => o.taken), 'Modo libre: los pedidos llegan sin pasar por caja');
+for (const b of [l1, l2]) await b.room.leave();
+const n2 = await bot('Nora', { sala: `nivel2-${Date.now()}`, modo: 2, nivel: 2 });
+n2.room.send('estilo', 'libre');
+await wait(300);
+check(n2.info.estilo === 'rol', 'A mitad de partida (nivel 2) no se puede cambiar el modo');
+await n2.room.leave();
+
 // Modo 1: el cliente dice directamente lo que quiere
 const solo = await bot('Solo', { sala: `solo-${Date.now()}`, modo: 1 });
 solo.room.send('start');

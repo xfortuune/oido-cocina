@@ -290,6 +290,15 @@ dinero, tiempo, las habilidades de cada uno, el MVP de toda la partida y el **ra
 el ranking es **por servidor**, así que se ve qué grupo de amigos llega más lejos. También se puede consultar desde
 el menú («Ranking»). El servidor lo guarda en `server/data/ranking.json` (o en la ruta de `RANKING_FILE`).
 
+### Modo rol y modo libre
+
+En la sala, antes de empezar la partida (nivel 1), cualquiera puede elegir el modo de juego. Se mantiene hasta perder.
+
+- **Modo rol** (por defecto): cada jugador lleva sus puestos (caja, plancha, montaje, freidora) y la caja toma nota.
+- **Modo libre**: todos pueden usar toda la cocina y no hay que tomar nota (los clientes piden directamente).
+  Para compensar, los clientes llegan un **20 % más rápido** y el objetivo de pedidos es algo mayor.
+  En el ranking, estas partidas salen marcadas con «(libre)». En solitario el modo no cambia nada.
+
 ### Pausa
 
 Escape (o el botón de pausa) **para la ronda para todo el grupo**: el reloj, los clientes y los fogones se quedan

@@ -142,7 +142,15 @@ export class HudScene extends Phaser.Scene {
     if (this.rolesText && rolesKey !== this.rolesKey) {
       this.rolesKey = rolesKey;
       const names = me?.roles.map((r) => ROLE_NAMES[r]).join(' · ');
-      this.rolesText.setText(names ? `Tus puestos: ${names}` : 'Sin puesto: ayuda llevando cosas');
+      const all = me?.roles.length === 4;
+      const label = all
+        ? net.info?.estilo === 'libre' && (net.info?.modo ?? 1) > 1
+          ? 'Modo libre: toda la cocina para todos'
+          : 'Toda la cocina es tuya'
+        : names
+          ? `Tus puestos: ${names}`
+          : 'Sin puesto: ayuda llevando cosas';
+      this.rolesText.setText(label);
     }
 
     const hint = this.kitchen.actionHint();

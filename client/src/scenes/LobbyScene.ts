@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { formatDuration, getPerk, getRecipe, levelParams, newRecipesAt, ROLE_NAMES, ROLES, type Role, type RoomInfo } from '@hora-punta/shared';
+import { ESTILO_NAMES, ESTILOS, formatDuration, getPerk, getRecipe, levelParams, LIBRE_RUSH, newRecipesAt, ROLE_NAMES, ROLES, type Role, type RoomInfo } from '@hora-punta/shared';
 import { getIdentity, isInDiscord, openInvite } from '../discord';
 import { audio } from '../audio';
 import { net, saveName, savedName, savedRecord } from '../net';
@@ -154,8 +154,30 @@ export class LobbyScene extends Phaser.Scene {
     });
     y += 46 * s;
 
+    // Modo de juego: rol (cada uno sus puestos) o libre (todos lo hacen todo). Solo se cambia en el nivel 1.
+    const libre = info.estilo === 'libre';
+    const canChange = info.nivel === 1;
+    const estW = Math.min(150 * s, (W - 40) / 2);
+    ESTILOS.forEach((e, i) => {
+      const selected = info.estilo === e;
+      new Button(this, W / 2 + (i - 0.5) * (estW + 8), y + 18 * s, {
+        w: estW,
+        h: 38 * s,
+        color: selected ? (e === 'libre' ? COLORS.blue : COLORS.green) : canChange ? 0x6b5a4a : 0x4a3e34,
+        textColor: selected || canChange ? '#ffffff' : '#9a8a7a',
+        label: ESTILO_NAMES[e],
+        fontSize: 16 * s,
+        onPress: () => canChange && net.setEstilo(e),
+      });
+    });
+    y += 42 * s;
+    if (!canChange) {
+      txt(this, W / 2, y, 'El modo se elige al empezar la partida (nivel 1)', 11 * s, { color: '#fff4dc88' }).setOrigin(0.5, 0);
+      y += 16 * s;
+    }
+
     // Nivel de la partida: se sube ganando rondas y se vuelve al 1 al perder una.
-    const lp = levelParams(info.nivel, info.modo);
+    const lp = levelParams(info.nivel, info.modo, info.estilo);
     const lvY = y + 20 * s;
     txt(this, W / 2, lvY, `Nivel ${info.nivel}`, 26 * s, { color: '#ffc93c', stroke: '#2b1d14', strokeThickness: 5 * s }).setOrigin(0.5);
     y += 44 * s;
@@ -184,7 +206,7 @@ export class LobbyScene extends Phaser.Scene {
     info.members.forEach((m, i) => {
       const ry = y + 8 + i * rowH + (anyPerks ? 15 * s : rowH / 2);
       this.add.image(W / 2 - boxW / 2 + 22, ry + 8 * s, chefKey(m.look ?? m.color, 'down', 0)).setScale(Math.max(1, Math.round(1.6 * s))).setOrigin(0.5, 1);
-      const roles = m.roles.length ? m.roles.map((r) => ROLE_NAMES[r]).join(', ') : 'sin puesto';
+      const roles = libre ? 'Toda la cocina' : m.roles.length ? m.roles.map((r) => ROLE_NAMES[r]).join(', ') : 'sin puesto';
       const label = `${m.name}${m.id === net.id ? ' (tú)' : ''}`;
       const avatarSize = Math.round(22 * s);
       const avatar = addAvatar(this, m, W / 2 - boxW / 2 + 44 + avatarSize / 2, ry, avatarSize);
@@ -200,33 +222,54 @@ export class LobbyScene extends Phaser.Scene {
     });
     y += listH + 14 * s;
 
-    // Puestos: toca uno para quedártelo
-    txt(this, W / 2, y, 'Toca un puesto para quedártelo', 15 * s, { color: '#fff4dc' }).setOrigin(0.5, 0);
-    y += 24 * s;
-    const cols = W >= 900 ? 4 : 2;
-    const gap = 10;
-    const cardW = (boxW - gap * (cols - 1)) / cols;
-    const cardH = 92 * s;
-    ROLES.forEach((role, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const cx = W / 2 - boxW / 2 + col * (cardW + gap);
-      const cy = y + row * (cardH + gap);
-      const owner = info.members.find((m) => m.roles.includes(role));
-      const mine = owner?.id === net.id;
-      const cg = this.add.graphics();
-      pixelPanel(cg, cx, cy, cardW, cardH, mine ? 0xffe2b8 : COLORS.panel);
-      this.add.image(cx + 26 * s, cy + cardH / 2, ROLE_TILES[role]).setScale(Math.max(2, Math.round(2.5 * s)));
-      txt(this, cx + 50 * s, cy + 10 * s, ROLE_NAMES[role], 16 * s).setOrigin(0, 0);
-      const help = txt(this, cx + 50 * s, cy + 32 * s, ROLE_HELP[role], 12 * s, { wordWrap: { width: cardW - 58 * s } });
-      help.setAlpha(0.8);
-      txt(this, cx + 50 * s, cy + cardH - 10 * s, owner ? owner.name : 'Libre', 14 * s, {
-        color: owner ? CHEF_COLORS[owner.color][1] : '#999999',
-      }).setOrigin(0, 1);
-      const zone = this.add.zone(cx + cardW / 2, cy + cardH / 2, cardW, cardH).setInteractive({ useHandCursor: true });
-      zone.on('pointerdown', () => net.claim(role));
-    });
-    y += Math.ceil(ROLES.length / cols) * (cardH + gap) + 10 * s;
+    if (libre) {
+      // Modo libre: no hay puestos que repartir.
+      const panelH = 96 * s;
+      pixelPanel(g, W / 2 - boxW / 2, y, boxW, panelH, 0xdcecf8);
+      const iconScale = Math.max(1, Math.round(1.6 * s));
+      const step = 16 * iconScale + 4;
+      ROLES.forEach((role, i) => {
+        this.add.image(W / 2 - boxW / 2 + 14 + step / 2 + i * step, y + panelH / 2, ROLE_TILES[role]).setScale(iconScale);
+      });
+      const textX = W / 2 - boxW / 2 + 14 + 4 * step + 12;
+      const explain = [
+        'Todos podéis usar toda la cocina: plancha, montaje, freidora y bebidas.',
+        `Sin caja: los clientes piden directamente, pero llegan un ${Math.round((LIBRE_RUSH - 1) * 100)} % más rápido.`,
+      ].join('\n');
+      txt(this, textX, y + panelH / 2, explain, 13 * s, {
+        wordWrap: { width: W / 2 + boxW / 2 - textX - 14 },
+        lineSpacing: 4,
+      }).setOrigin(0, 0.5);
+      y += panelH + 14 * s;
+    } else {
+      // Puestos: toca uno para quedártelo
+      txt(this, W / 2, y, 'Toca un puesto para quedártelo', 15 * s, { color: '#fff4dc' }).setOrigin(0.5, 0);
+      y += 24 * s;
+      const cols = W >= 900 ? 4 : 2;
+      const gap = 10;
+      const cardW = (boxW - gap * (cols - 1)) / cols;
+      const cardH = 92 * s;
+      ROLES.forEach((role, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const cx = W / 2 - boxW / 2 + col * (cardW + gap);
+        const cy = y + row * (cardH + gap);
+        const owner = info.members.find((m) => m.roles.includes(role));
+        const mine = owner?.id === net.id;
+        const cg = this.add.graphics();
+        pixelPanel(cg, cx, cy, cardW, cardH, mine ? 0xffe2b8 : COLORS.panel);
+        this.add.image(cx + 26 * s, cy + cardH / 2, ROLE_TILES[role]).setScale(Math.max(2, Math.round(2.5 * s)));
+        txt(this, cx + 50 * s, cy + 10 * s, ROLE_NAMES[role], 16 * s).setOrigin(0, 0);
+        const help = txt(this, cx + 50 * s, cy + 32 * s, ROLE_HELP[role], 12 * s, { wordWrap: { width: cardW - 58 * s } });
+        help.setAlpha(0.8);
+        txt(this, cx + 50 * s, cy + cardH - 10 * s, owner ? owner.name : 'Libre', 14 * s, {
+          color: owner ? CHEF_COLORS[owner.color][1] : '#999999',
+        }).setOrigin(0, 1);
+        const zone = this.add.zone(cx + cardW / 2, cy + cardH / 2, cardW, cardH).setInteractive({ useHandCursor: true });
+        zone.on('pointerdown', () => net.claim(role));
+      });
+      y += Math.ceil(ROLES.length / cols) * (cardH + gap) + 10 * s;
+    }
 
     const covered = ROLES.every((r) => info.members.some((m) => m.roles.includes(r)));
     const ready = covered && info.members.length >= info.modo;

@@ -10,7 +10,7 @@ function party(info: RoomInfo) {
 
 function cooks(info: RoomInfo): string {
   if (info.modo === 1) return 'En solitario';
-  return `${info.members.length} de ${info.modo} cocineros`;
+  return `${info.members.length} de ${info.modo} cocineros${info.estilo === 'libre' ? ' · modo libre' : ''}`;
 }
 
 function fromRoom(info: RoomInfo): void {

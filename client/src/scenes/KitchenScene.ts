@@ -3,6 +3,7 @@ import {
   CONFIG,
   CUSTOMER_SLOTS_X,
   CUSTOMER_Y,
+  EMOTES,
   getRecipe,
   KitchenSim,
   ROLE_NAMES,
@@ -113,16 +114,17 @@ export class KitchenScene extends Phaser.Scene {
     }) as typeof this.keys;
     kb.on('keydown', (e: KeyboardEvent) => {
       if (e.repeat) return;
-      // Escape: pausa (o vuelve atrás en el menú de pausa, que lo gestiona el HUD).
-      if (e.key === 'Escape') {
+      // Escape o P: pausa (o vuelve atrás en el menú de pausa, que lo gestiona el HUD).
+      // P sirve dentro de Discord, que se queda la tecla Escape.
+      if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
         this.events.emit('escape');
         return;
       }
       if (net.paused) return;
       if (e.key === ' ' || e.key === 'e' || e.key === 'E' || e.key === 'Enter') this.interact();
-      // Gestos rápidos: 1 ¡Oído!, 2 ¡Ayuda!, 3 ¡Marchando!, 4 ¡Gracias!
+      // Gestos rápidos: 1 ¡Oído!, 2 ¡Ayuda!, 3 ¡Marchando!, 4 ¡Gracias!, 5 ¡Voy!
       const n = Number(e.key);
-      if (n >= 1 && n <= 4) net.emote(n - 1);
+      if (n >= 1 && n <= EMOTES.length) net.emote(n - 1);
     });
 
     const onSnap = (s: SimSnapshot) => this.sim.applySnapshot(s, net.id);

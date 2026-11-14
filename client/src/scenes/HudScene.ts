@@ -161,7 +161,7 @@ export class HudScene extends Phaser.Scene {
 
     const hint = this.kitchen.actionHint();
     this.actionLabel?.setText(hint);
-    this.hintText?.setText(`WASD / flechas: moverse   ·   Espacio / E: ${hint === '—' ? 'acción' : hint.toLowerCase()}   ·   1-4: gestos`);
+    this.hintText?.setText(`WASD / flechas: moverse   ·   Espacio / E: ${hint === '—' ? 'acción' : hint.toLowerCase()}   ·   1-5: gestos   ·   Esc / P: pausa`);
   }
 
   // ---------------------------------------------------------------- construcción
@@ -710,10 +710,10 @@ export class HudScene extends Phaser.Scene {
     if (!label) return;
     audio.sfx('emote', emote);
     this.emotes.get(id)?.text.destroy();
-    const colors = ['#ffffff', '#ffb36b', '#7ee081', '#ffc93c'];
+    const colors = ['#ffffff', '#ffb36b', '#7ee081', '#ffc93c', '#9fd3ff'];
     const text = txt(this, 0, 0, label, 16, {
       color: '#2b1d14',
-      backgroundColor: colors[emote],
+      backgroundColor: colors[emote % colors.length],
       padding: { x: 6, y: 3 },
     })
       .setOrigin(0.5, 1)
@@ -730,9 +730,9 @@ export class HudScene extends Phaser.Scene {
         this.emotes.delete(id);
         continue;
       }
-      // Justo encima del nombre del cocinero.
-      const at = this.kitchen.worldToScreen(pos.x, pos.y - 1.45);
-      e.text.setPosition(Math.round(at.x), Math.round(at.y - 10));
+      // Justo encima de la cabeza (por debajo del nombre, si lo hay).
+      const at = this.kitchen.worldToScreen(pos.x, pos.y - 0.8);
+      e.text.setPosition(Math.round(at.x), Math.round(at.y - 2));
       e.text.setAlpha(Math.min(1, (e.until - this.time.now) / 300));
     }
   }
@@ -746,9 +746,10 @@ export class HudScene extends Phaser.Scene {
     }
     const c = this.L.controls!;
     const menu = this.add.container(0, 0).setDepth(40);
-    const w = Math.min(92, (c.w - 30) / 4);
+    const n = EMOTES.length;
+    const w = Math.min(92, (c.w - 12 - 6 * (n - 1)) / n);
     EMOTES.forEach((label, i) => {
-      const x = c.x + c.w / 2 + (i - 1.5) * (w + 6);
+      const x = c.x + c.w / 2 + (i - (n - 1) / 2) * (w + 6);
       const y = c.y - 24;
       const g = this.add.graphics();
       pixelPanel(g, x - w / 2, y - 18, w, 36, COLORS.panel, 2);

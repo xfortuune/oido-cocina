@@ -40,4 +40,4 @@ export function cleanLook(look: unknown, fallbackApron = 0): ChefLook {
 }
 
 /** Gestos rápidos: un bocadillo encima del cocinero. */
-export const EMOTES = ['¡Oído!', '¡Ayuda!', '¡Marchando!', '¡Gracias!'] as const;
+export const EMOTES = ['¡Oído!', '¡Ayuda!', '¡Marchando!', '¡Gracias!', '¡Voy!'] as const;

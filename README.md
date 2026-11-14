@@ -344,8 +344,8 @@ quietos y a todos les sale el menú con «Pausada por …». Cualquiera puede re
 - **Tu cocinero**: en el menú (o tocando al cocinero grande) eliges el **color del delantal** (8) y un **accesorio**
   que se gana con tu récord: gorro de chef, gorra (2 niveles), pañuelo (4), bigote (6), gafas de sol (10) y corona (20).
   Se guarda en el navegador y lo ven todos en la cocina, la sala y los resúmenes.
-- **Gestos rápidos**: «¡Oído!», «¡Ayuda!», «¡Marchando!» y «¡Gracias!» salen en un bocadillo encima de tu cocinero, con
-  su sonido. En el PC, teclas **1-4**; en el móvil, el icono del bocadillo entre el joystick y el botón. Útil para quien
+- **Gestos rápidos**: «¡Oído!», «¡Ayuda!», «¡Marchando!», «¡Gracias!» y «¡Voy!» salen en un bocadillo encima de tu cocinero, con
+  su sonido. En el PC, teclas **1-5**; en el móvil, el icono del bocadillo entre el joystick y el botón. Útil para quien
   no tiene micro.
 
 ### Sonido
@@ -374,8 +374,8 @@ acelera en los últimos 30 segundos de la ronda. El altavoz (menú, tienda y coc
 |---|---|---|
 | Moverse | WASD o flechas | Joystick (izquierda) |
 | Acción (coger, dejar, apilar, servir, tomar nota, pasar) | Espacio, E o Enter | Botón naranja (muestra la acción) |
-| Gestos rápidos | 1, 2, 3, 4 | Icono del bocadillo |
-| Pausa (reanudar, configuración, salir al menú) | Escape o el icono ⏸ abajo a la derecha | Icono ⏸ arriba a la izquierda de los controles |
+| Gestos rápidos | 1, 2, 3, 4, 5 | Icono del bocadillo |
+| Pausa (reanudar, configuración, salir al menú) | Escape, P (dentro de Discord) o el icono ⏸ abajo a la derecha | Icono ⏸ arriba a la izquierda de los controles |
 
 ## Cómo funciona la red
 

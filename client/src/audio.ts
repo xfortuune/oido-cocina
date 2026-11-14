@@ -314,7 +314,7 @@ class GameAudio {
         break;
       case 'emote': {
         // Cada gesto con su melodía corta: ¡Oído!, ¡Ayuda!, ¡Marchando!, ¡Gracias!
-        const tunes = [[79, 84], [84, 79, 84], [72, 76, 79], [84, 88]];
+        const tunes = [[79, 84], [84, 79, 84], [72, 76, 79], [84, 88], [76, 79]];
         (tunes[n] ?? tunes[0]).forEach((m, i) => this.pluck(midi(m), t + i * 0.07, 0.12, 0.09, bus));
         break;
       }

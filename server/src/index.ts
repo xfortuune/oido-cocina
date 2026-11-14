@@ -59,7 +59,7 @@ const server = new Server({
 });
 
 // Una sala por "sala": en Discord, una por instancia de la Actividad (todos los del canal de voz juntos).
-server.define(ROOM_NAME, KitchenRoom).filterBy(['sala']);
+server.define(ROOM_NAME, KitchenRoom).filterBy(['sala', 'juego']);
 
 await server.listen(port);
 const { clientId, clientSecret, requireDiscord } = discordConfig();

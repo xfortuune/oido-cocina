@@ -180,11 +180,40 @@ multijugador (WebSockets), por el mismo puerto. No hace falta port forwarding ni
    - `VITE_DISCORD_CLIENT_ID`: el ID de la aplicación (se usa al compilar).
    - `DISCORD_CLIENT_SECRET`: el secreto de OAuth2.
    - `REQUIRE_DISCORD=1` (opcional): solo se puede entrar desde Discord.
-   - `RANKING_FILE=/data/ranking.json` con un **Volume** montado en `/data`, para que el ranking no se borre en cada despliegue.
+   - `DATA_DIR=/data` con un **Volume** montado en `/data`, para que las campañas y el ranking no se borren en cada despliegue.
    - No pongas `PORT` ni `SERVER_PORT`: Railway da el puerto y el servidor lo usa.
 3. **Settings → Networking → Generate Domain**: te da una dirección como `oido-cocina-production.up.railway.app`.
    Ábrela en el navegador para probar (tú y tus amigos, con `?sala=algo` para jugar juntos).
 4. En el Developer Portal de Discord, **Activities → URL Mappings**: prefijo `/` → esa dirección (sin `https://`).
+
+
+## Campaña: vuestro restaurante
+
+Desde el menú, **Campaña** abre el restaurante del grupo: uno por servidor de Discord (en el navegador, uno por
+`?sala=`). Se guarda en el servidor y cualquiera puede gestionarlo; los cambios se ven en directo.
+
+Cada día tiene tres partes:
+
+1. **Mañana (gestión)**, en pestañas:
+   - **Hoy**: clientes previstos, cuántas hamburguesas da la despensa, avisos (lo que caduca, lo que falta), el equipo,
+     el modo rol o libre y los puestos.
+   - **Despensa**: comprar paquetes de pan, carne, queso, lechuga, tomate, bacon, patatas y refresco. El precio cambia
+     cada día («barato hoy» / «caro hoy») y cada cosa caduca (la lechuga a los 2 días, la carne a los 3…).
+   - **Carta**: qué hamburguesas se ofrecen y a qué precio (de la mitad al triple del normal). Más barato atrae más
+     clientes; demasiado caro los espanta y baja la reputación. Las recetas nuevas se **aprenden** pagando.
+   - **Banco**: pedir préstamos (3 % de interés al día) y devolverlos.
+   Cuando todos pulsan «¡Abrir!», empieza el servicio.
+2. **Servicio**: la cocina de siempre, pero cada caja tiene las **unidades reales** de la despensa (si se acaba la carne,
+   no hay más hasta mañana), solo se piden platos de la carta y se cobra a vuestros precios. La gente que viene depende
+   de los precios, la reputación y el día de la semana (el fin de semana, más).
+3. **Cierre**: ventas, propinas, multas, compras, alquiler (15), intereses, lo caducado y la reputación.
+   Si el día acaba en negativo, el banco presta lo que falte con un 10 % de comisión; con más de **400 de deuda**,
+   **bancarrota**: se empieza de nuevo (se guarda el mejor día en el «salón de la fama»).
+
+La lógica está en `shared/src/campaign.ts`. Próximas fases: personal y local, capítulos y misiones, segundo local.
+
+**Guardado en Railway:** monta un **Volume** en `/data` y añade la variable `DATA_DIR=/data`. Ahí se guardan las campañas
+y el ranking; sin volumen se borrarían en cada despliegue.
 
 
 ## Cómo se juega

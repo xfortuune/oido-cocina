@@ -1,7 +1,7 @@
 {
   "name": "hora-punta",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "¡Oído, Cocina!: juego cooperativo de hamburguesería para Discord Activities",
   "workspaces": [
     "shared",

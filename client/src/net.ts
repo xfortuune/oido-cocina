@@ -102,6 +102,11 @@ class Net extends Phaser.Events.EventEmitter {
     this.room?.send('interact', msg);
   }
 
+  /** Campaña: órdenes de gestión ('c:buy', 'c:price'…), ver protocol.ts. */
+  campaign(type: string, payload?: unknown): void {
+    this.room?.send(type, payload);
+  }
+
   claim(role: Role): void {
     this.room?.send('claim', role);
   }

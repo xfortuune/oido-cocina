@@ -11,7 +11,16 @@
 //   'ready'    en la tienda: listo para seguir (cuando lo están todos, a la sala)
 //   'emote'    number: gesto rápido (índice de EMOTES), en la cocina
 //   'pause'    boolean: pausar o reanudar la ronda (para todos)
-//   'estilo'   Estilo: modo rol o libre (en la sala, solo en el nivel 1)
+//   'estilo'   Estilo: modo rol o libre (en la sala, solo en el nivel 1; en la campaña, en la gestión)
+//
+// Solo en la campaña (fase 'gestion'):
+//   'c:buy'    StockId: comprar un paquete de ingredientes
+//   'c:price'  { id, price }: precio de una receta o de 'fries' / 'drink'
+//   'c:menu'   { id, on }: quitar o poner una receta en la carta
+//   'c:learn'  recipeId: aprender (comprar) una receta
+//   'c:loan'   number: pedir un préstamo     'c:repay' number: devolver deuda
+//   'ready'    listo para abrir el restaurante (cuando lo están todos, empieza el servicio)
+//   'c:next'   en el cierre: pasar a la mañana del día siguiente
 //   'modo'     number: cambiar cuántos jugadores se esperan (2-4, en el vestíbulo)
 //
 // Servidor → cliente:
@@ -22,6 +31,7 @@
 //   'emote'    EmoteMessage: alguien ha hecho un gesto
 //   'bought'   UpgradeId: alguien ha comprado una mejora
 
+import type { Campaign } from './campaign';
 import type { Estilo } from './levels';
 import type { ChefLook } from './looks';
 import type { EndReason, PlayerStats, Role, TurnStats } from './sim';
@@ -42,6 +52,8 @@ export interface JoinOptions {
   grupo?: string;
   /** Delantal y accesorio elegidos en el menú. */
   look?: ChefLook;
+  /** Campaña (restaurante del grupo) o Desafío (20 niveles). Por defecto, Desafío. */
+  juego?: Juego;
   /** Token de Discord: el servidor lo usa para saber quién eres (nombre y avatar verificados). */
   accessToken?: string;
   /** Cuántos jugadores (1-4). Lo fija quien crea la sala. */
@@ -75,7 +87,9 @@ export interface InputMessage {
   moving: boolean;
 }
 
-export type RoomPhase = 'lobby' | 'playing' | 'summary' | 'perks' | 'shop';
+export type RoomPhase = 'lobby' | 'playing' | 'summary' | 'perks' | 'shop' | 'gestion' | 'cierre';
+
+export type Juego = 'campana' | 'desafio';
 
 export interface LobbyMember {
   id: string;
@@ -114,6 +128,9 @@ export interface RoomInfo {
   paused: string | null;
   /** Modo de juego de la partida: rol (puestos) o libre (todos lo hacen todo, sin caja). */
   estilo: Estilo;
+  juego: Juego;
+  /** Solo en la campaña: el restaurante del grupo. */
+  campana: Campaign | null;
 }
 
 export interface RankingEntry {

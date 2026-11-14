@@ -21,6 +21,20 @@ import {
   mvpScore,
   ROLES,
   TICK_MS,
+  buyStock,
+  closeDay,
+  learnRecipe,
+  newCampaign,
+  repay,
+  servicePrices,
+  serviceParams,
+  setMenuOn,
+  setPrice,
+  stockForService,
+  takeLoan,
+  type Campaign,
+  type Juego,
+  type StockId,
   type InputMessage,
   type JoinOptions,
   type LobbyMember,
@@ -30,6 +44,7 @@ import {
   type SummaryInfo,
 } from '@hora-punta/shared';
 import { discordConfig, fetchUser, type DiscordUser } from './discord.ts';
+import { loadCampaign, saveCampaign } from './campaignStore.ts';
 import { addRanking, cleanGroup, getRanking } from './ranking.ts';
 
 const GUEST = { guest: true } as const;
@@ -74,6 +89,9 @@ export class KitchenRoom extends Room {
   private pausedBy: string | null = null;
   /** Modo rol (cada uno sus puestos) o libre (todos lo hacen todo, sin caja). */
   private estilo: Estilo = 'rol';
+  /** Campaña (restaurante del grupo, con gestión y días) o Desafío (20 niveles). */
+  private juego: Juego = 'desafio';
+  private campana: Campaign | null = null;
 
   onCreate(options: JoinOptions): void {
     this.sala = String(options.sala ?? 'local');
@@ -82,12 +100,19 @@ export class KitchenRoom extends Room {
     if (turno > 0) this.turnDuration = Math.max(10, Math.min(300, turno));
     if (options.nivel) this.nivel = clampLevel(options.nivel);
     this.grupo = cleanGroup(options.grupo);
+    if (options.juego === 'campana') {
+      this.juego = 'campana';
+      this.campana = loadCampaign(this.grupo);
+      this.phase = 'gestion';
+      this.registerCampaignMessages();
+    }
 
     this.onMessage('input', (client, msg: InputMessage) => this.applyInput(client.sessionId, msg));
     // Modo de juego: se elige en la sala antes de empezar la partida (nivel 1) y se mantiene hasta perder.
     this.onMessage('estilo', (_client, value: string) => {
       const estilo = ESTILOS.find((e) => e === value);
-      if (!estilo || this.phase !== 'lobby' || this.nivel !== 1 || estilo === this.estilo) return;
+      const allowed = this.juego === 'campana' ? this.phase === 'gestion' : this.phase === 'lobby' && this.nivel === 1;
+      if (!estilo || !allowed || estilo === this.estilo) return;
       this.estilo = estilo;
       this.assignRoles();
       this.broadcastRoom();
@@ -125,12 +150,12 @@ export class KitchenRoom extends Room {
     this.onMessage('claim', (client, role: Role) => this.claim(client.sessionId, role));
     this.onMessage('modo', (_client, n: number) => {
       const modo = clampModo(n);
-      if (this.phase === 'playing' || this.modo === 1 || modo < 2) return;
+      if (this.juego === 'campana' || this.phase === 'playing' || this.modo === 1 || modo < 2) return;
       this.modo = modo;
       this.assignRoles();
       this.broadcastRoom();
     });
-    this.onMessage('start', () => this.startTurn());
+    this.onMessage('start', () => this.juego === 'desafio' && this.startTurn());
     // Tras el resumen: habilidades (cada 2 niveles), tienda y sala. Si se ha acabado la partida, a la sala.
     this.onMessage('lobby', () => {
       if (this.phase !== 'summary') return;
@@ -154,9 +179,10 @@ export class KitchenRoom extends Room {
     this.onMessage('buy', (_client, id: string) => this.buy(String(id)));
     this.onMessage('ready', (client) => {
       const m = this.members.get(client.sessionId);
-      if (this.phase !== 'shop' || !m) return;
+      if ((this.phase !== 'shop' && this.phase !== 'gestion') || !m) return;
       m.ready = !m.ready;
       this.checkShopDone();
+      this.checkOpenRestaurant();
       this.broadcastRoom();
     });
 
@@ -201,6 +227,7 @@ export class KitchenRoom extends Room {
       look: cleanLook(options.look, color),
     };
     this.members.set(client.sessionId, member);
+    if (this.juego === 'campana') this.modo = Math.max(1, Math.min(MAX_PLAYERS, this.members.size));
     if (this.phase !== 'playing') this.assignRoles();
     // En el modo libre, quien entra a mitad de ronda también puede hacerlo todo.
     else if (this.estilo === 'libre') member.roles = [...ROLES];
@@ -222,6 +249,13 @@ export class KitchenRoom extends Room {
     this.sim?.removePlayer(client.sessionId);
     this.lastInput.delete(client.sessionId);
     this.memberKeys.delete(client.sessionId);
+    if (this.juego === 'campana') this.modo = Math.max(1, Math.min(MAX_PLAYERS, this.members.size));
+    if (this.phase === 'gestion' || this.phase === 'cierre') {
+      this.assignRoles();
+      this.checkOpenRestaurant();
+      this.broadcastRoom();
+      return;
+    }
     if (this.phase === 'perks' || this.phase === 'shop') {
       this.checkPerksDone();
       this.checkShopDone();
@@ -311,7 +345,89 @@ export class KitchenRoom extends Room {
     const events = sim.drainEvents();
     if (events.length) this.broadcast('events', events);
     this.broadcast('snap', sim.snapshot());
-    if (sim.ended) this.finishTurn(sim);
+    if (sim.ended) {
+      if (this.juego === 'campana') this.finishService(sim);
+      else this.finishTurn(sim);
+    }
+  }
+
+  // ---------------------------------------------------------------- campaña
+
+  private registerCampaignMessages(): void {
+    // Cualquier cambio de gestión: solo por la mañana; se guarda y se enseña a todos.
+    const manage = (fn: (c: Campaign) => boolean) => {
+      const c = this.campana;
+      if (!c || this.phase !== 'gestion' || !fn(c)) return;
+      saveCampaign(c);
+      this.broadcastRoom();
+    };
+    this.onMessage('c:buy', (_cl, id: string) => manage((c) => buyStock(c, String(id) as StockId)));
+    this.onMessage('c:price', (_cl, m: { id: string; price: number }) => manage((c) => setPrice(c, String(m?.id), Number(m?.price))));
+    this.onMessage('c:menu', (_cl, m: { id: string; on: boolean }) => manage((c) => setMenuOn(c, String(m?.id), !!m?.on)));
+    this.onMessage('c:learn', (_cl, id: string) => manage((c) => learnRecipe(c, String(id))));
+    this.onMessage('c:loan', (_cl, n: number) => manage((c) => takeLoan(c, n)));
+    this.onMessage('c:repay', (_cl, n: number) => manage((c) => repay(c, n)));
+    // Del cierre a la mañana siguiente (cualquiera).
+    this.onMessage('c:next', () => {
+      if (this.phase !== 'cierre') return;
+      this.phase = 'gestion';
+      for (const m of this.members.values()) m.ready = false;
+      this.broadcastRoom();
+    });
+  }
+
+  /** Cuando todos han pulsado «Listo» en la gestión, se abre el restaurante. */
+  private checkOpenRestaurant(): void {
+    if (this.phase !== 'gestion' || this.members.size === 0) return;
+    if ([...this.members.values()].every((m) => m.ready)) this.startService();
+  }
+
+  private startService(): void {
+    const c = this.campana;
+    if (!c) return;
+    this.modo = Math.max(1, Math.min(MAX_PLAYERS, this.members.size));
+    this.assignRoles();
+    const sim = new KitchenSim(serviceParams(c, this.modo, this.estilo), Math.random, this.mejoras);
+    sim.moveOnTick = false;
+    sim.needsCaja = this.modo > 1 && this.estilo === 'rol';
+    sim.day = c.day;
+    sim.stock = stockForService(c);
+    sim.prices = servicePrices(c);
+    sim.reputation = Math.max(10, c.reputation);
+    if (this.turnDuration) sim.turnDuration = this.turnDuration;
+    for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles, m.perks, m.look);
+    for (const m of this.members.values()) m.ready = false;
+    this.sim = sim;
+    this.pausedBy = null;
+    this.phase = 'playing';
+    this.broadcastRoom();
+  }
+
+  /** Fin del servicio: cuentas del día, se guarda y se enseña el cierre. */
+  private finishService(sim: KitchenSim): void {
+    const c = this.campana;
+    if (!c) return;
+    const report = closeDay(c, {
+      money: sim.money,
+      served: sim.stats.served,
+      lost: sim.stats.lost,
+      perfect: sim.stats.perfect,
+      earned: sim.stats.earned,
+      tips: sim.stats.tips,
+      reputation: Math.max(0, sim.reputation),
+      remaining: sim.stock ?? {},
+    });
+    if (report.bankrupt) {
+      // Bancarrota: se empieza de nuevo, pero queda el salón de la fama.
+      const fresh = newCampaign(c.key, { quiebras: c.fame.quiebras + 1, mejorDia: c.fame.mejorDia });
+      fresh.lastReport = report;
+      this.campana = fresh;
+    }
+    saveCampaign(this.campana!);
+    this.sim = null;
+    this.pausedBy = null;
+    this.phase = 'cierre';
+    this.broadcastRoom();
   }
 
   private finishTurn(sim: KitchenSim): void {
@@ -472,6 +588,8 @@ export class KitchenRoom extends Room {
       mejoras: this.mejoras,
       paused: this.pausedBy,
       estilo: this.estilo,
+      juego: this.juego,
+      campana: this.campana,
     };
   }
 

@@ -431,6 +431,8 @@ function generateIcons(scene: Phaser.Scene): void {
   paint(scene, 'icon_smoke', ['..gg..', '.gwwg.', 'gwwwwg', '.gwwg.', '..gg..'], BASE);
   // Números de 3x5 para los bocadillos de los clientes.
   DIGITS.forEach((rows, n) => paint(scene, `digit_${n}`, rows, { k: '#2b1d14' }));
+  // Y en claro, para los contadores de existencias de la campaña.
+  DIGITS.forEach((rows, n) => paint(scene, `digitw_${n}`, rows, { k: '#fff4dc' }));
 }
 
 const DIGITS = [

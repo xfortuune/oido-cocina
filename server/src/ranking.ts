@@ -5,7 +5,10 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RankingEntry } from '@hora-punta/shared';
 
-const FILE = process.env.RANKING_FILE ?? fileURLToPath(new URL('../data/ranking.json', import.meta.url));
+// Con DATA_DIR (por ejemplo un Volume de Railway en /data) se guarda ahí junto a las campañas.
+const FILE =
+  process.env.RANKING_FILE ??
+  (process.env.DATA_DIR ? `${process.env.DATA_DIR}/ranking.json` : fileURLToPath(new URL('../data/ranking.json', import.meta.url)));
 const KEEP = 20;
 
 let data: Record<string, RankingEntry[]> | null = null;

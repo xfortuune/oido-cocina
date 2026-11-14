@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CUSTOMER_SLOTS_X, EMOTES, formatDuration, getPerk, getRecipe, newRecipesAt, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
+import { CUSTOMER_SLOTS_X, EMOTES, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { addSoundToggle } from '../ui/SoundToggle';
 import { Button } from '../ui/Button';
@@ -105,9 +105,15 @@ export class HudScene extends Phaser.Scene {
     }
     this.hud.money.setText(String(sim.money)).setColor(sim.money < 0 ? '#ff6b5b' : '#fff4dc');
     this.hud.rep.setText(String(Math.max(0, sim.reputation))).setColor(sim.reputation <= 15 ? '#ff6b5b' : '#fff4dc');
-    const reached = sim.stats.served >= sim.goal;
-    this.hud.served.setText(`${sim.stats.served}/${sim.goal}`).setColor(reached ? '#7ee081' : '#fff4dc');
-    this.levelText?.setText(`Nivel ${sim.level}${reached ? ' · ¡objetivo cumplido!' : ''}`);
+    if (sim.day > 0) {
+      // Campaña: no hay objetivo, el dinero es lo que cuenta.
+      this.hud.served.setText(String(sim.stats.served)).setColor('#fff4dc');
+      this.levelText?.setText(`Día ${sim.day} · ${weekday(sim.day)}`);
+    } else {
+      const reached = sim.stats.served >= sim.goal;
+      this.hud.served.setText(`${sim.stats.served}/${sim.goal}`).setColor(reached ? '#7ee081' : '#fff4dc');
+      this.levelText?.setText(`Nivel ${sim.level}${reached ? ' · ¡objetivo cumplido!' : ''}`);
+    }
     const perks = this.kitchen.localPlayer?.perks ?? [];
     const perksKey = perks.join(',');
     if (this.perksText && perksKey !== this.perksKey) {
@@ -380,12 +386,15 @@ export class HudScene extends Phaser.Scene {
     this.bannerShown = true;
     const sim = this.kitchen.sim;
     const L = this.L;
-    const fresh = newRecipesAt(sim.level).map((id) => getRecipe(id).name);
-    const lines = [`Sirve ${sim.goal} pedidos en ${formatDuration(sim.turnDuration)}`];
+    const campaign = sim.day > 0;
+    const fresh = campaign ? [] : newRecipesAt(sim.level).map((id) => getRecipe(id).name);
+    const lines = campaign
+      ? [`${weekday(sim.day)} · unos ${sim.goal} clientes en ${formatDuration(sim.turnDuration)}`]
+      : [`Sirve ${sim.goal} pedidos en ${formatDuration(sim.turnDuration)}`];
     if (fresh.length) lines.push(`¡Receta nueva: ${fresh.join(', ')}!`);
     const cx = L.kitchen.x + L.kitchen.w / 2;
     const cy = L.kitchen.y + L.kitchen.h * 0.4;
-    const title = txt(this, cx, cy, `NIVEL ${sim.level}`, clamp(L.kitchen.w * 0.09, 30, 56), {
+    const title = txt(this, cx, cy, campaign ? `DÍA ${sim.day}` : `NIVEL ${sim.level}`, clamp(L.kitchen.w * 0.09, 30, 56), {
       color: '#ff8a3d',
       stroke: '#2b1d14',
       strokeThickness: 8,
@@ -662,6 +671,15 @@ export class HudScene extends Phaser.Scene {
         this.popup(at.x, at.y, '¡Nota tomada!', '#ffffff');
         break;
       }
+      case 'empty':
+        if (ev.playerId === net.id) {
+          const me = this.kitchen.localPlayer;
+          const at = me ? this.kitchen.worldToScreen(me.x, me.y - 1.2) : { x: this.L.W / 2, y: this.L.H / 2 };
+          const name = ev.item === 'refresco' ? 'refresco' : (getStock(CRATE_STOCK[ev.item] ?? ev.item)?.name.toLowerCase() ?? ev.item);
+          this.popup(at.x, at.y, `¡No queda ${name}!`, '#ff6b5b');
+          audio.sfx('denied');
+        }
+        break;
       case 'denied':
         if (ev.playerId === net.id) {
           const me = this.kitchen.localPlayer;

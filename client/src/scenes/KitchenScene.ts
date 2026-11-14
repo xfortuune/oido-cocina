@@ -77,6 +77,10 @@ export class KitchenScene extends Phaser.Scene {
   private keys!: Record<'up' | 'down' | 'left' | 'right' | 'w' | 'a' | 's' | 'd', Phaser.Input.Keyboard.Key>;
   private sendTimer = 0;
   private leaving = false;
+  /** Campaña: contador de existencias encima de cada caja (y de las máquinas de bebida). */
+  private stockLabels = new Map<string, { item: string; x: number; y: number; icon?: Phaser.GameObjects.Image; label: Phaser.GameObjects.Container; shown: number }>();
+  /** Si esta cocina es un servicio de la campaña (para volver a ella). */
+  private campaign = false;
   /** Momento del último sonido de entrega/tirar/pasar (para no sumarle el de «soltar»). */
   private lastActionSound = 0;
 
@@ -92,6 +96,8 @@ export class KitchenScene extends Phaser.Scene {
 
     this.players.clear();
     this.stations.clear();
+    this.stockLabels.clear();
+    this.campaign = net.info?.juego === 'campana';
     this.customers.clear();
     this.touch.x = this.touch.y = 0;
     this.leaving = false;
@@ -125,9 +131,11 @@ export class KitchenScene extends Phaser.Scene {
       if (info.phase === 'lobby') this.exitTo('lobby');
       else if (info.phase === 'perks') this.exitTo('perks');
       else if (info.phase === 'shop') this.exitTo('shop');
+      // Campaña: al acabar el servicio, a las cuentas del día.
+      else if (info.phase === 'cierre' || info.phase === 'gestion') this.exitTo('campaign', 900);
     };
     const onSummary = () => this.exitTo('summary', 900);
-    const onLeft = () => this.exitTo('lobby');
+    const onLeft = () => this.exitTo(this.campaign ? 'campaign' : 'lobby');
     net.on('snap', onSnap);
     net.on('events', onEvents);
     net.on('room', onRoom);
@@ -226,9 +234,36 @@ export class KitchenScene extends Phaser.Scene {
     return '—';
   }
 
+  private addStockLabel(key: string, item: string, x: number, y: number, icon?: Phaser.GameObjects.Image): void {
+    const label = this.add.container(x * TILE + 1, y * TILE + 1).setDepth(470).setVisible(false);
+    this.stockLabels.set(key, { item, x, y, icon, label, shown: -1 });
+  }
+
+  /** Campaña: cuántas unidades quedan en cada caja; gris si está vacía. */
+  private syncStock(): void {
+    const stock = this.sim.stock;
+    for (const v of this.stockLabels.values()) {
+      if (!stock) {
+        v.label.setVisible(false);
+        continue;
+      }
+      const n = Math.max(0, stock[v.item] ?? 0);
+      if (n === v.shown) continue;
+      v.shown = n;
+      v.label.removeAll(true);
+      const digits = String(Math.min(n, 99));
+      const w = digits.length * 4 + 1;
+      v.label.add(this.add.rectangle(0, 0, w, 7, n === 0 ? 0xc0392b : 0x2b1d14, 0.85).setOrigin(0));
+      [...digits].forEach((d, i) => v.label.add(this.add.image(1 + i * 4, 1, `digitw_${d}`).setOrigin(0)));
+      v.label.setVisible(true);
+      v.icon?.setTint(n === 0 ? 0x555555 : 0xffffff);
+    }
+  }
+
   update(time: number, delta: number): void {
     const dt = Math.min(delta, 100) / 1000;
     this.moveLocal(dt);
+    this.syncStock();
 
     this.syncStations(time);
     this.syncPlayers(time, dt);
@@ -271,7 +306,7 @@ export class KitchenScene extends Phaser.Scene {
     }
   }
 
-  private exitTo(scene: 'lobby' | 'summary' | 'perks' | 'shop', delay = 0): void {
+  private exitTo(scene: 'lobby' | 'summary' | 'perks' | 'shop' | 'campaign', delay = 0): void {
     if (this.leaving) return;
     this.leaving = true;
     this.time.delayedCall(delay, () => {
@@ -290,8 +325,10 @@ export class KitchenScene extends Phaser.Scene {
         if (t.kind === 'crate') {
           const icon =
             t.crate === 'carne_cruda' ? 'ing_carne_cruda' : t.crate === 'pan' ? 'ing_pan_top' : t.crate === 'patatas' ? 'side_patatas' : `ing_${t.crate}`;
-          this.add.image(t.x * TILE + 8, t.y * TILE + 10, icon).setOrigin(0.5, 1).setDepth(1);
+          const img = this.add.image(t.x * TILE + 8, t.y * TILE + 10, icon).setOrigin(0.5, 1).setDepth(1);
+          this.addStockLabel(`${t.x},${t.y}`, t.crate!, t.x, t.y, img);
         }
+        if (t.kind === 'drinks') this.addStockLabel(`${t.x},${t.y}`, 'refresco', t.x, t.y);
         if (this.sim.station(t.x, t.y)) {
           const container = this.add.container(t.x * TILE + 8, t.y * TILE + 11).setDepth(10 + t.y * TILE);
           this.stations.set(`${t.x},${t.y}`, { container, sig: '', layers: 0, warned: 0, steamAt: 0 });

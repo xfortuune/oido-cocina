@@ -159,6 +159,52 @@ while (!solo.snap?.orders.length) await wait(100);
 check(solo.snap.orders.every((o) => o.taken), 'Modo 1: los pedidos llegan sin pasar por caja');
 await solo.room.leave();
 
+// Campaña: el restaurante del grupo, con gestión, servicio, cierre y guardado
+{
+  const key = `bots-${Date.now()}`;
+  const camp = { sala: `campana-${key}`, grupo: key, juego: 'campana', turno: 15 };
+  const g1 = await bot('Gema', camp);
+  const g2 = await bot('Gus', camp);
+  let c = g1.info.campana;
+  check(g1.info.phase === 'gestion' && c?.day === 1 && g1.info.members.length === 2, 'Campaña: los dos en la gestión del día 1');
+  const carne0 = c.stock.carne.reduce((n, l) => n + l.qty, 0);
+  g2.room.send('c:buy', 'carne');
+  g1.room.send('c:price', { id: 'chispa', price: 8 });
+  g1.room.send('c:learn', 'jardin');
+  g2.room.send('c:loan', 50);
+  await wait(400);
+  c = g1.info.campana;
+  const carne1 = c.stock.carne.reduce((n, l) => n + l.qty, 0);
+  check(carne1 === carne0 + 5, `Gus compra carne y Gema lo ve (${carne0} → ${carne1})`);
+  check(c.menu.find((m) => m.recipeId === 'chispa').price === 8, 'Gema sube La Chispa a 8');
+  check(c.learnedRecipes.includes('jardin') && c.menu.find((m) => m.recipeId === 'jardin').on, 'Aprenden El Jardín y entra en la carta');
+  check(c.debt === 150, `Piden un préstamo de 50 (deuda ${c.debt})`);
+  g1.room.send('ready');
+  await wait(200);
+  check(g1.info.phase === 'gestion', 'Con uno solo listo no se abre');
+  g2.room.send('ready');
+  await wait(400);
+  check(g1.info.phase === 'playing' && g1.snap?.day === 1 && g1.snap.stock?.carne_cruda === carne1, '¡Abierto! El servicio lleva el stock de la despensa');
+  // Gema (caja+montaje) no puede coger carne; Gus (plancha+freidora) sí
+  await g2.walk([[2.5, 7.5]], [0, 1]);
+  await g2.act();
+  check(g2.me().holding?.kind === 'raw' && g2.snap.stock.carne_cruda === carne1 - 1, 'Gus coge carne y la caja tiene una menos');
+  while (g1.info.phase !== 'cierre') await wait(300);
+  c = g1.info.campana;
+  const r = c.lastReport;
+  check(r?.day === 1 && c.day === 2 && r.rent === 15, `Cierre del día 1: alquiler ${r?.rent}, intereses ${r?.interest}, dinero ${r?.moneyAfter}`);
+  check(c.stock.carne.reduce((n, l) => n + l.qty, 0) === carne1 - 1, 'La carne usada se descuenta de la despensa');
+  g1.room.send('c:next');
+  await wait(300);
+  check(g2.info.phase === 'gestion' && g2.info.campana.day === 2, 'Mañana del día 2');
+  await g1.room.leave();
+  await g2.room.leave();
+  await wait(400);
+  const g3 = await bot('Gema', camp);
+  check(g3.info.campana?.day === 2 && g3.info.campana.learnedRecipes.includes('jardin'), 'Al volver a entrar, el restaurante sigue en el día 2 (guardado)');
+  await g3.room.leave();
+}
+
 // Partida en solitario desde el nivel 2: el bot cocina dos Chispas, supera el nivel,
 // elige habilidad, y al perder el nivel 3 vuelve al 1 sin habilidades.
 const chef = await bot('Chef', { sala: `perk-${Date.now()}`, modo: 1, nivel: 2, turno: 60, grupo: `bots${Date.now()}` });

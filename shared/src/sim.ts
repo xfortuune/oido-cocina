@@ -169,7 +169,9 @@ export type SimEvent =
   | { type: 'cooked'; x: number; y: number }
   | { type: 'filled'; x: number; y: number }
   | { type: 'burnt'; x: number; y: number; what: 'carne' | 'patatas'; cost: number }
-  | { type: 'end'; reason: EndReason };
+  | { type: 'end'; reason: EndReason }
+  /** Campaña: la caja (o el refresco) se ha quedado sin existencias. */
+  | { type: 'empty'; playerId: string; item: string };
 
 export type EndReason = 'time' | 'reputation';
 
@@ -179,6 +181,9 @@ export interface SimSnapshot {
   turnDuration: number;
   level: number;
   goal: number;
+  /** Campaña: día del restaurante (0 en el Desafío) y existencias de cada caja. */
+  day: number;
+  stock: Record<string, number> | null;
   money: number;
   reputation: number;
   ended: boolean;
@@ -214,6 +219,11 @@ export class KitchenSim {
   moveOnTick = true;
   /** Si hace falta que la caja tome nota (no en el modo de un jugador). */
   needsCaja = true;
+  /** Campaña: día (0 en el Desafío), existencias por caja (null = ilimitadas) y precios de la carta. */
+  day = 0;
+  stock: Record<string, number> | null = null;
+  prices: { recipes: Record<string, number>; fries: number; drink: number } | null = null;
+
   /** Fallos ya perdonados por Disculpa a tiempo en esta ronda, por jugador. */
   private forgiven: Record<string, number> = {};
   private nextId = 1;
@@ -352,15 +362,21 @@ export class KitchenSim {
 
     if (t.kind === 'crate') {
       const c = t.crate!;
-      if (!held) p.holding = crateItem(c);
-      else if (held.kind === 'food' && held.layers.length === 1 && held.layers[0] === c) p.holding = null;
+      if (!held) {
+        if (!this.take(c, p.id)) return;
+        p.holding = crateItem(c);
+      } else if (held.kind === 'food' && held.layers.length === 1 && held.layers[0] === c) {
+        p.holding = null;
+        if (this.stock) this.stock[c] = (this.stock[c] ?? 0) + 1;
+      }
       // Bandeja: con comida en las manos, el ingrediente se apila encima.
       else if (
         held.kind === 'food' &&
         has(p, 'bandeja') &&
         c !== 'carne_cruda' &&
         c !== 'patatas' &&
-        held.layers.length < CONFIG.maxStack
+        held.layers.length < CONFIG.maxStack &&
+        this.take(c, p.id)
       ) {
         held.layers.push(c);
         st0.assembled++;
@@ -418,6 +434,7 @@ export class KitchenSim {
       case 'drinks':
         // Con las manos vacías: se pone un vaso a llenar, y cuando está lleno se recoge.
         if (!held && !st.item) {
+          if (!this.take('refresco', p.id)) return;
           st.item = { kind: 'drink', flavor: t.flavor!, fill: 0 };
           st.rate = (1 + 0.35 * perkCount(p.perks, 'grifo')) * (this.upgrades.includes('dispensador') ? 1.4 : 1);
           st0.cooked++;
@@ -488,6 +505,8 @@ export class KitchenSim {
       turnDuration: this.turnDuration,
       level: this.level,
       goal: this.goal,
+      day: this.day,
+      stock: this.stock,
       money: this.money,
       reputation: this.reputation,
       ended: this.ended,
@@ -509,6 +528,8 @@ export class KitchenSim {
     this.turnDuration = s.turnDuration;
     this.level = s.level;
     this.goal = s.goal;
+    this.day = s.day;
+    this.stock = s.stock;
     this.money = s.money;
     this.reputation = s.reputation;
     this.ended = s.ended;
@@ -669,9 +690,25 @@ export class KitchenSim {
     return true;
   }
 
+  /** Campaña: gasta una unidad de la caja; sin existencias, avisa y no deja coger. */
+  private take(item: string, playerId: string): boolean {
+    if (!this.stock) return true;
+    if ((this.stock[item] ?? 0) <= 0) {
+      this.events.push({ type: 'empty', playerId, item });
+      return false;
+    }
+    this.stock[item]--;
+    return true;
+  }
+
   private complete(order: Order): void {
     const recipe = getRecipe(order.recipeId);
-    const price = recipe.price + (order.fries ? CONFIG.friesPrice : 0) + (order.drink ? CONFIG.drinkPrice : 0);
+    // En la campaña se cobra a los precios de la carta.
+    const pr = this.prices;
+    const price =
+      (pr?.recipes[recipe.id] ?? recipe.price) +
+      (order.fries ? (pr?.fries ?? CONFIG.friesPrice) : 0) +
+      (order.drink ? (pr?.drink ?? CONFIG.drinkPrice) : 0);
     const ratio = order.patience / order.maxPatience;
     const perfect = ratio >= CONFIG.perfectThreshold;
     const earned = Math.round(price * (0.6 + 0.4 * ratio));

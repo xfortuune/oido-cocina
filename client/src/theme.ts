@@ -13,7 +13,9 @@ export const COLORS = {
 };
 
 export const INK = '#2b1d14';
-export const FONT = '"Pixelify Sans", monospace';
+export const FONT = '"Tiny5", monospace';
+/** Tamaño mínimo de letra (en píxeles de pantalla). */
+export const MIN_FONT = 11;
 
 /** Texto con la fuente pixel, nítido en pantallas de alta densidad. */
 export function txt(
@@ -27,7 +29,8 @@ export function txt(
   return scene.add
     .text(x, y, text, {
       fontFamily: FONT,
-      fontSize: `${Math.round(size)}px`,
+      // Por debajo de 11 px la letra pixel ya no se lee bien.
+      fontSize: `${Math.round(Math.max(MIN_FONT, size))}px`,
       color: INK,
       ...style,
     })

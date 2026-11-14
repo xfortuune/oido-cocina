@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import '@fontsource/pixelify-sans/400.css';
-import '@fontsource/pixelify-sans/700.css';
+// Tiny5: pixel art, pero legible en tamaño pequeño (el 5 no se confunde con la S).
+import '@fontsource/tiny5/400.css';
 import { audio } from './audio';
 import { net } from './net';
 import { startPresence } from './presence';
@@ -17,7 +17,7 @@ import { SummaryScene } from './scenes/SummaryScene';
 
 async function start(): Promise<void> {
   // Phaser dibuja el texto en un canvas: la fuente tiene que estar cargada antes.
-  await Promise.all([document.fonts.load('16px "Pixelify Sans"'), document.fonts.load('bold 16px "Pixelify Sans"')]).catch(() => {});
+  await document.fonts.load('16px "Tiny5"').catch(() => {});
 
   const game = new Phaser.Game({
     type: Phaser.AUTO,

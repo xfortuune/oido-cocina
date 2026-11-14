@@ -176,6 +176,8 @@ multijugador (WebSockets), por el mismo puerto. No hace falta port forwarding ni
 
 1. **New Project → Deploy from GitHub repo** → `oido-cocina`, rama `main`, carpeta raíz del repositorio.
    `railway.json` ya le dice cómo compilar (`npm run build`) y arrancar (`npm start`), con comprobación en `/health`.
+   También le dice que despliegue con **cualquier** cambio del repositorio (`watchPatterns`). Si en Railway hay
+   *Watch Paths* puestas a mano (por ejemplo solo `server/`), bórralas: los cambios del cliente no se desplegarían.
 2. **Variables**:
    - `VITE_DISCORD_CLIENT_ID`: el ID de la aplicación (se usa al compilar).
    - `DISCORD_CLIENT_SECRET`: el secreto de OAuth2.

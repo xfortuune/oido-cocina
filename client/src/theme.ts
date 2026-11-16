@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { FONT_FAMILY, fontPx } from './fonts';
 
 export const COLORS = {
   bg: 0x2b1d14,
@@ -13,9 +14,7 @@ export const COLORS = {
 };
 
 export const INK = '#2b1d14';
-export const FONT = '"Tiny5", monospace';
-/** Tamaño mínimo de letra (en píxeles de pantalla). */
-export const MIN_FONT = 11;
+export const FONT = `"${FONT_FAMILY}", monospace`;
 
 /** Texto con la fuente pixel, nítido en pantallas de alta densidad. */
 export function txt(
@@ -29,8 +28,8 @@ export function txt(
   return scene.add
     .text(x, y, text, {
       fontFamily: FONT,
-      // Por debajo de 11 px la letra pixel ya no se lee bien.
-      fontSize: `${Math.round(Math.max(MIN_FONT, size))}px`,
+      // Ajustado a la fuente pixel (ver fonts.ts).
+      fontSize: `${fontPx(size)}px`,
       color: INK,
       ...style,
     })

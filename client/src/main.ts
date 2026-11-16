@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
-// Tiny5: pixel art, pero legible en tamaño pequeño (el 5 no se confunde con la S).
-import '@fontsource/tiny5/400.css';
+import { FONT_FAMILY } from './fonts';
 import { audio } from './audio';
 import { net } from './net';
 import { startPresence } from './presence';
@@ -17,7 +16,7 @@ import { SummaryScene } from './scenes/SummaryScene';
 
 async function start(): Promise<void> {
   // Phaser dibuja el texto en un canvas: la fuente tiene que estar cargada antes.
-  await document.fonts.load('16px "Tiny5"').catch(() => {});
+  await document.fonts.load(`16px "${FONT_FAMILY}"`).catch(() => {});
 
   const game = new Phaser.Game({
     type: Phaser.AUTO,

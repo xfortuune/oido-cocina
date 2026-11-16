@@ -1,6 +1,7 @@
 // Prueba rápida del multijugador sin navegador: dos bots juegan un turno corto.
 // Uso (con el servidor en marcha):  node scripts/prueba-bots.mjs
 import { Client } from '@colyseus/sdk';
+import { mkdirSync, writeFileSync } from 'node:fs';
 
 const URL = process.env.SERVIDOR ?? 'http://localhost:2567';
 const sala = `bots-${Date.now()}`;
@@ -207,7 +208,44 @@ await solo.room.leave();
   await wait(400);
   const g3 = await bot('Gema', camp);
   check(g3.info.campana?.day === 2 && g3.info.campana.learnedRecipes.includes('jardin'), 'Al volver a entrar, el restaurante sigue en el día 2 (guardado)');
+  check(r.xp?.length === 2 && g3.info.campana.chefs['web:Gema']?.xp > 0, `Experiencia del día 1: ${r.xp?.map((x) => `${x.name} +${x.gained}`).join(', ')}`);
   await g3.room.leave();
+}
+
+// Campaña, fase 3: formación, concurso del domingo y tablón de encargos.
+// Se prepara una campaña guardada en el día 7 (domingo), capítulo 2, con una cocinera con experiencia.
+{
+  const key = `bots3-${Date.now()}`;
+  mkdirSync('server/data/campanas', { recursive: true });
+  writeFileSync(`server/data/campanas/${key}.json`, JSON.stringify({
+    version: 1, key, day: 7, money: 500, debt: 0, reputation: 60, chapter: 2,
+    chefs: { 'web:Lia': { name: 'Lia', xp: 85, perks: [] } },
+  }));
+  const lia = await bot('Lia', { sala: `campana-${key}`, grupo: key, juego: 'campana', turno: 12 });
+  let c = lia.info.campana;
+  const me = lia.info.members[0];
+  check(c.day === 7 && c.chapter === 2 && me.chefKey === 'web:Lia', 'Campaña preparada: domingo, capítulo 2, Lia con 85 de experiencia');
+  lia.room.send('c:train', 'zapatillas');
+  await wait(300);
+  check(lia.info.campana.chefs['web:Lia'].perks[0] === 'zapatillas' && lia.info.members[0].perks[0] === 'zapatillas', 'Lia gasta un punto y aprende Zapatillas');
+  lia.room.send('c:contest', true);
+  await wait(300);
+  check(lia.info.campana.contestToday === true, 'Se apuntan al concurso del domingo');
+  lia.room.send('ready');
+  await wait(500);
+  check(lia.snap?.contest === true && lia.snap.stock === null && lia.snap.goal > 0, `Concurso: objetivo ${lia.snap?.goal} pedidos, ingredientes ilimitados`);
+  check(lia.snap.players[0].perks.includes('zapatillas'), 'La habilidad aprendida va a la cocina');
+  while (lia.info.phase !== 'cierre') await wait(300);
+  c = lia.info.campana;
+  const rr = c.lastReport;
+  check(rr.contest && rr.contest.won === false && rr.contest.prize === 20 && rr.sales === 0, `Concurso perdido (${rr.contest?.served} de ${rr.contest?.goal}): premio de consolación ${rr.contest?.prize}, sin ventas`);
+  check(c.day === 8 && c.board.length === 2, `Día 8: tablón con ${c.board.map((m) => m.title).join(' y ')}`);
+  lia.room.send('c:next');
+  await wait(200);
+  lia.room.send('c:mission', c.board[0].id);
+  await wait(300);
+  check(lia.info.campana.activeMission?.id === c.board[0].id, `Aceptan el encargo «${c.board[0].title}»`);
+  await lia.room.leave();
 }
 
 // Partida en solitario desde el nivel 2: el bot cocina dos Chispas, supera el nivel,

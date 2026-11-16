@@ -105,7 +105,12 @@ export class HudScene extends Phaser.Scene {
     }
     this.hud.money.setText(String(sim.money)).setColor(sim.money < 0 ? '#ff6b5b' : '#fff4dc');
     this.hud.rep.setText(String(Math.max(0, sim.reputation))).setColor(sim.reputation <= 15 ? '#ff6b5b' : '#fff4dc');
-    if (sim.day > 0) {
+    if (sim.contest) {
+      // Campaña, domingo de concurso: objetivo de pedidos, como el Desafío.
+      const reached = sim.stats.served >= sim.goal;
+      this.hud.served.setText(`${sim.stats.served}/${sim.goal}`).setColor(reached ? '#7ee081' : '#fff4dc');
+      this.levelText?.setText(`Concurso · día ${sim.day}${reached ? ' · ¡objetivo cumplido!' : ''}`);
+    } else if (sim.day > 0) {
       // Campaña: no hay objetivo, el dinero es lo que cuenta.
       this.hud.served.setText(String(sim.stats.served)).setColor('#fff4dc');
       this.levelText?.setText(`Día ${sim.day} · ${weekday(sim.day)}`);
@@ -386,15 +391,15 @@ export class HudScene extends Phaser.Scene {
     this.bannerShown = true;
     const sim = this.kitchen.sim;
     const L = this.L;
-    const campaign = sim.day > 0;
+    const campaign = sim.day > 0 && !sim.contest;
     const fresh = campaign ? [] : newRecipesAt(sim.level).map((id) => getRecipe(id).name);
     const lines = campaign
       ? [`${weekday(sim.day)} · unos ${sim.goal} clientes en ${formatDuration(sim.turnDuration)}`]
-      : [`Sirve ${sim.goal} pedidos en ${formatDuration(sim.turnDuration)}`];
+      : [`Servid ${sim.goal} pedidos en ${formatDuration(sim.turnDuration)}`];
     if (fresh.length) lines.push(`¡Receta nueva: ${fresh.join(', ')}!`);
     const cx = L.kitchen.x + L.kitchen.w / 2;
     const cy = L.kitchen.y + L.kitchen.h * 0.4;
-    const title = txt(this, cx, cy, campaign ? `DÍA ${sim.day}` : `NIVEL ${sim.level}`, clamp(L.kitchen.w * 0.09, 30, 56), {
+    const title = txt(this, cx, cy, sim.contest ? 'CONCURSO' : campaign ? `DÍA ${sim.day}` : `NIVEL ${sim.level}`, clamp(L.kitchen.w * 0.09, 30, 56), {
       color: '#ff8a3d',
       stroke: '#2b1d14',
       strokeThickness: 8,

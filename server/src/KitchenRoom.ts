@@ -23,6 +23,13 @@ import {
   TICK_MS,
   buyStock,
   buyLocalUpgrade,
+  acceptMission,
+  afterClose,
+  chefFor,
+  checkChapterNow,
+  contestParams,
+  setContest,
+  train,
   fire,
   hasStaff,
   hire,
@@ -216,7 +223,8 @@ export class KitchenRoom extends Room {
     const color = [0, 1, 2, 3].find((c) => !used.has(c)) ?? 0;
     const user = discordUser(client);
     const name = user?.name ?? (String(options.name ?? '').trim().slice(0, 20) || `Cocinero ${color + 1}`);
-    const key = user?.id ?? client.sessionId;
+    // En la campaña, la formación se guarda por cuenta de Discord o, en el navegador, por nombre.
+    const key = user?.id ?? (this.juego === 'campana' ? `web:${name}` : client.sessionId);
     this.memberKeys.set(client.sessionId, key);
     const perks = this.runPerks.get(key) ?? [];
     this.runPerks.set(key, perks);
@@ -231,6 +239,10 @@ export class KitchenRoom extends Room {
       ready: false,
       look: cleanLook(options.look, color),
     };
+    if (this.campana) {
+      member.perks = [...chefFor(this.campana, key, name).perks];
+      member.chefKey = key;
+    }
     this.members.set(client.sessionId, member);
     if (this.juego === 'campana') this.modo = Math.max(1, Math.min(MAX_PLAYERS, this.members.size));
     if (this.phase !== 'playing') this.assignRoles();
@@ -363,6 +375,9 @@ export class KitchenRoom extends Room {
     const manage = (fn: (c: Campaign) => boolean) => {
       const c = this.campana;
       if (!c || this.phase !== 'gestion' || !fn(c)) return;
+      // Algunos objetivos se cumplen en la gestión (por ejemplo, devolver la deuda).
+      const done = checkChapterNow(c);
+      if (done) this.broadcast('c:chapter', done);
       saveCampaign(c);
       this.broadcastRoom();
     };
@@ -375,6 +390,18 @@ export class KitchenRoom extends Room {
     this.onMessage('c:hire', (_cl, id: string) => manage((c) => hire(c, String(id))));
     this.onMessage('c:fire', (_cl, id: string) => manage((c) => fire(c, String(id))));
     this.onMessage('c:upgrade', (_cl, id: string) => manage((c) => buyLocalUpgrade(c, String(id))));
+    this.onMessage('c:mission', (_cl, id: string) => manage((c) => acceptMission(c, String(id))));
+    this.onMessage('c:contest', (_cl, on: boolean) => manage((c) => setContest(c, !!on)));
+    // Formación: cada uno entrena a su propio cocinero.
+    this.onMessage('c:train', (client, perk: string) =>
+      manage((c) => {
+        const key = this.memberKeys.get(client.sessionId) ?? client.sessionId;
+        if (!train(c, key, String(perk))) return false;
+        const m = this.members.get(client.sessionId);
+        if (m) m.perks = [...c.chefs[key].perks];
+        return true;
+      }),
+    );
     // Del cierre a la mañana siguiente (cualquiera).
     this.onMessage('c:next', () => {
       if (this.phase !== 'cierre') return;
@@ -395,13 +422,17 @@ export class KitchenRoom extends Room {
     if (!c) return;
     this.modo = Math.max(1, Math.min(MAX_PLAYERS, this.members.size));
     this.assignRoles();
-    const sim = new KitchenSim(serviceParams(c, this.modo, this.estilo), Math.random, serviceUpgrades(c));
+    // Domingo de concurso: reglas del Desafío (objetivo de pedidos, ingredientes del patrocinador).
+    const contest = c.contestToday;
+    const params = contest ? contestParams(c, this.modo, this.estilo) : serviceParams(c, this.modo, this.estilo);
+    const sim = new KitchenSim(params, Math.random, serviceUpgrades(c));
     sim.moveOnTick = false;
     // Con camarero, nadie tiene que tomar nota.
     sim.needsCaja = this.modo > 1 && this.estilo === 'rol' && !hasStaff(c, 'camarero');
     sim.day = c.day;
-    sim.stock = stockForService(c);
-    sim.prices = servicePrices(c);
+    sim.contest = contest;
+    sim.stock = contest ? null : stockForService(c);
+    sim.prices = contest ? null : servicePrices(c);
     sim.reputation = Math.max(10, c.reputation);
     if (this.turnDuration) sim.turnDuration = this.turnDuration;
     for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles, m.perks, m.look);
@@ -416,20 +447,33 @@ export class KitchenRoom extends Room {
   private finishService(sim: KitchenSim): void {
     const c = this.campana;
     if (!c) return;
+    // En el concurso no se cobran ventas (el premio va aparte) ni se gasta la despensa.
+    const contest = sim.contest;
     const report = closeDay(c, {
-      money: sim.money,
+      money: contest ? 0 : sim.money,
       served: sim.stats.served,
       lost: sim.stats.lost,
       perfect: sim.stats.perfect,
-      earned: sim.stats.earned,
-      tips: sim.stats.tips,
+      earned: contest ? 0 : sim.stats.earned,
+      tips: contest ? 0 : sim.stats.tips,
       reputation: Math.max(0, sim.reputation),
-      remaining: sim.stock ?? {},
+      remaining: contest ? stockForService(c) : (sim.stock ?? {}),
     });
+    // Experiencia: lo que ha aportado cada uno (como el MVP), con un mínimo por estar.
+    const xp = [...this.members.values()].map((m) => {
+      const st = sim.playerStats[m.id] ?? { taken: 0, delivered: 0, cooked: 0, assembled: 0, mistakes: 0 };
+      return { key: this.memberKeys.get(m.id) ?? m.id, name: m.name, gained: Math.max(5, mvpScore(st)) };
+    });
+    afterClose(c, report, { stats: sim.stats, contest: contest ? { served: sim.stats.served, goal: sim.goal } : null, xp });
+    for (const m of this.members.values()) {
+      const t = c.chefs[this.memberKeys.get(m.id) ?? m.id];
+      if (t) m.perks = [...t.perks];
+    }
     if (report.bankrupt) {
-      // Bancarrota: se empieza de nuevo, pero queda el salón de la fama.
+      // Bancarrota: se empieza de nuevo, pero queda el salón de la fama y lo que han aprendido los cocineros.
       const fresh = newCampaign(c.key, { quiebras: c.fame.quiebras + 1, mejorDia: c.fame.mejorDia });
       fresh.lastReport = report;
+      fresh.chefs = c.chefs;
       this.campana = fresh;
     }
     saveCampaign(this.campana!);

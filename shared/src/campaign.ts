@@ -178,6 +178,23 @@ export const CAMPAIGN = {
   emergencyFee: 0.1,
 };
 
+export interface Mission {
+  id: string;
+  kind: 'boda' | 'critico' | 'festival' | 'inspeccion' | 'colegio';
+  title: string;
+  text: string;
+  recipeId?: string;
+  target: number;
+  reward: number;
+  rep: number;
+}
+
+export interface ChefTraining {
+  name: string;
+  xp: number;
+  perks: string[];
+}
+
 export interface DayReport {
   day: number;
   served: number;
@@ -206,6 +223,11 @@ export interface DayReport {
   moneyAfter: number;
   debtAfter: number;
   bankrupt: boolean;
+  /** Progresión: encargo, concurso, capítulo completado y experiencia ganada (progress.ts). */
+  mission?: { title: string; ok: boolean; reward: number; rep: number; progress: string } | null;
+  contest?: { served: number; goal: number; won: boolean; prize: number } | null;
+  chapterDone?: { n: number; title: string; reward: number } | null;
+  xp?: { name: string; gained: number; newPoints: number }[];
 }
 
 export interface Campaign {
@@ -226,6 +248,17 @@ export interface Campaign {
   staff: StaffId[];
   /** Mejoras permanentes del local y decoración. */
   upgrades: string[];
+  /** Progresión (progress.ts): capítulo actual y cómo estaban los contadores al empezarlo. */
+  chapter: number;
+  chapterStart: { served: number; missions: number; contests: number };
+  missionsDone: number;
+  contestsWon: number;
+  /** Encargos del tablón de hoy, el aceptado y si hoy se va al concurso. */
+  board: Mission[];
+  activeMission: Mission | null;
+  contestToday: boolean;
+  /** Formación de cada cocinero (por cuenta de Discord, o por nombre en el navegador). */
+  chefs: Record<string, ChefTraining>;
   lastReport: DayReport | null;
   /** Lo que queda de partidas anteriores tras una bancarrota. */
   fame: { quiebras: number; mejorDia: number };
@@ -267,6 +300,14 @@ export function newCampaign(key: string, fame = { quiebras: 0, mejorDia: 0 }): C
     learnedRecipes: [],
     staff: [],
     upgrades: [],
+    chapter: 1,
+    chapterStart: { served: 0, missions: 0, contests: 0 },
+    missionsDone: 0,
+    contestsWon: 0,
+    board: [],
+    activeMission: null,
+    contestToday: false,
+    chefs: {},
     sides: { ...SIDE_BASE },
     spentToday: 0,
     lastReport: null,
@@ -588,5 +629,13 @@ export function reviveCampaign(raw: unknown, key: string): Campaign {
   if (!Array.isArray(out.learnedRecipes)) out.learnedRecipes = [];
   if (!Array.isArray(out.staff)) out.staff = [];
   if (!Array.isArray(out.upgrades)) out.upgrades = [];
+  if (typeof out.chapter !== 'number') out.chapter = 1;
+  out.chapterStart ??= { served: out.totals?.served ?? 0, missions: 0, contests: 0 };
+  out.missionsDone ??= 0;
+  out.contestsWon ??= 0;
+  if (!Array.isArray(out.board)) out.board = [];
+  out.activeMission ??= null;
+  out.contestToday ??= false;
+  out.chefs ??= {};
   return out;
 }

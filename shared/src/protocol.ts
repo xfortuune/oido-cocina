@@ -21,6 +21,9 @@
 //   'c:loan'   number: pedir un préstamo     'c:repay' number: devolver deuda
 //   'c:hire'   StaffId: contratar            'c:fire' StaffId: despedir
 //   'c:upgrade' id: comprar una mejora o decoración del local (LOCAL_UPGRADES)
+//   'c:mission' id: aceptar un encargo del tablón   'c:contest' boolean: ir al concurso (domingos)
+//   'c:train'  PerkId: tu cocinero aprende una habilidad con un punto de formación
+// Servidor → cliente (campaña): 'c:chapter' { n, title, reward } al completar un capítulo en la gestión
 //   'ready'    listo para abrir el restaurante (cuando lo están todos, empieza el servicio)
 //   'c:next'   en el cierre: pasar a la mañana del día siguiente
 //   'modo'     number: cambiar cuántos jugadores se esperan (2-4, en el vestíbulo)
@@ -107,6 +110,8 @@ export interface LobbyMember {
   /** En la tienda: ha pulsado «Listo». */
   ready: boolean;
   look: ChefLook;
+  /** Campaña: clave de su formación (cuenta de Discord, o «web:nombre» en el navegador). */
+  chefKey?: string;
 }
 
 export interface EmoteMessage {

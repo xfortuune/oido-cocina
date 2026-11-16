@@ -1,6 +1,16 @@
 import Phaser from 'phaser';
 import {
   CAMPAIGN,
+  chefPoints,
+  contestAvailable,
+  contestLevel,
+  contestParams,
+  CONTEST_PRIZE,
+  currentChapter,
+  getPerk,
+  perkCount,
+  TRAINABLE,
+  XP_PER_POINT,
   decorAppeal,
   hasStaff,
   LOCAL_UPGRADES,
@@ -42,9 +52,10 @@ import { addAvatar, loadAvatars } from '../ui/avatars';
 import { Button } from '../ui/Button';
 import { addSoundToggle } from '../ui/SoundToggle';
 
-type Tab = 'hoy' | 'despensa' | 'carta' | 'personal' | 'local' | 'banco';
+type Tab = 'hoy' | 'misiones' | 'despensa' | 'carta' | 'personal' | 'local' | 'banco';
 const TABS: [Tab, string][] = [
   ['hoy', 'Hoy'],
+  ['misiones', 'Misiones'],
   ['despensa', 'Despensa'],
   ['carta', 'Carta'],
   ['personal', 'Personal'],
@@ -72,6 +83,10 @@ export class CampaignScene extends Phaser.Scene {
   private tab: Tab = 'hoy';
   /** Pestaña «Local»: mejoras de cocina o decoración. */
   private localKind: LocalKind = 'cocina';
+  /** Pestaña «Personal»: empleados o formación de vuestros cocineros. */
+  private staffKind: 'empleados' | 'cocineros' = 'empleados';
+  /** Formación: habilidad seleccionada para ver su descripción. */
+  private selectedPerk = TRAINABLE[0].id;
   private status = '';
 
   constructor() {
@@ -90,6 +105,10 @@ export class CampaignScene extends Phaser.Scene {
     };
     net.on('room', onRoom);
     net.on('left', onLeft);
+    // Capítulo completado en plena gestión (por ejemplo, al devolver la deuda).
+    const onChapter = (d: { n: number; title: string; reward: number }) => this.toast(`¡Capítulo ${d.n} completado! +${d.reward}`, d.title);
+    net.on('c:chapter', onChapter);
+    this.events.once('shutdown', () => net.off('c:chapter', onChapter));
     this.scale.on('resize', this.build, this);
     this.events.once('shutdown', () => {
       net.off('room', onRoom);
@@ -184,7 +203,7 @@ export class CampaignScene extends Phaser.Scene {
     const x0 = W / 2 - boxW / 2;
 
     // Pestañas: en una fila si caben; si no, en dos de tres.
-    const perRow = boxW >= 560 ? TABS.length : 3;
+    const perRow = boxW >= 560 ? TABS.length : 4;
     const tabW = (boxW - 6 * (perRow - 1)) / perRow;
     const tabH = 34 * s;
     TABS.forEach(([id, label], i) => {
@@ -211,7 +230,8 @@ export class CampaignScene extends Phaser.Scene {
     if (this.tab === 'hoy') this.tabToday(info, c, area, s);
     else if (this.tab === 'despensa') this.tabPantry(c, area, s);
     else if (this.tab === 'carta') this.tabMenu(c, area, s);
-    else if (this.tab === 'personal') this.tabStaff(c, area, s);
+    else if (this.tab === 'misiones') this.tabMissions(c, area, s);
+    else if (this.tab === 'personal') (this.staffKind === 'empleados' ? this.tabStaff(c, area, s) : this.tabChefs(info, c, area, s));
     else if (this.tab === 'local') this.tabLocal(c, area, s);
     else this.tabBank(c, area, s);
 
@@ -254,6 +274,12 @@ export class CampaignScene extends Phaser.Scene {
     const lines: [string, string][] = [
       ['Clientes previstos', `unos ${expected}`],
       ['Hamburguesas que da la despensa', `${burgers}`],
+      ['Capítulo', currentChapter(c) ? `${c.chapter}: ${currentChapter(c)!.title}` : 'todos completados'],
+      ...(c.contestToday
+        ? ([['Hoy', 'concurso de cocina']] as [string, string][])
+        : c.activeMission
+          ? ([['Encargo de hoy', c.activeMission.title]] as [string, string][])
+          : []),
       ['En la carta', menuOn(c).map((m) => getRecipe(m.recipeId).name).join(', ')],
       ...(c.staff.length ? ([['Personal', STAFF.filter((x) => c.staff.includes(x.id)).map((x) => x.name).join(', ')]] as [string, string][]) : []),
       ...(decorAppeal(c) ? ([['Decoración', `${Math.round(decorAppeal(c) * 100)} % más clientes`]] as [string, string][]) : []),
@@ -449,11 +475,31 @@ export class CampaignScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- pestaña: personal
 
+  /** Empleados / Cocineros, arriba de la pestaña «Personal». Devuelve dónde empieza el contenido. */
+  private staffToggle(a: Area, s: number): number {
+    const sw = (a.w - 8) / 2;
+    (['empleados', 'cocineros'] as const).forEach((k, i) => {
+      new Button(this, a.x + sw / 2 + i * (sw + 8), a.y + 16 * s, {
+        w: sw,
+        h: 32 * s,
+        color: this.staffKind === k ? COLORS.blue : 0x8a7a6a,
+        label: k === 'empleados' ? 'Empleados' : 'Vuestros cocineros',
+        fontSize: 14 * s,
+        onPress: () => {
+          this.staffKind = k;
+          this.build();
+        },
+      });
+    });
+    return a.y + 40 * s;
+  }
+
   private tabStaff(c: Campaign, a: Area, s: number): void {
     const fs = 15 * s;
-    txt(this, a.x, a.y, `Sueldos: ${wagesPerDay(c)} al día. Se pagan al cerrar.`, fs * 0.85).setAlpha(0.7);
-    const top = a.y + fs * 1.8;
-    const rowH = Math.min(84 * s, (a.h - (top - a.y)) / STAFF.length);
+    const y0 = this.staffToggle(a, s);
+    txt(this, a.x, y0, `Sueldos: ${wagesPerDay(c)} al día. Se pagan al cerrar.`, fs * 0.85).setAlpha(0.7);
+    const top = y0 + fs * 1.8;
+    const rowH = Math.min(80 * s, (a.h - (top - a.y)) / STAFF.length);
     STAFF.forEach((st, i) => {
       const y = top + i * rowH;
       const hired = hasStaff(c, st.id);
@@ -470,6 +516,172 @@ export class CampaignScene extends Phaser.Scene {
       });
       this.add.rectangle(a.x, y + rowH - 2, a.w, 1, 0x2b1d14, 0.12).setOrigin(0);
     });
+  }
+
+  // ---------------------------------------------------------------- pestaña: personal → cocineros
+
+  private tabChefs(info: RoomInfo, c: Campaign, a: Area, s: number): void {
+    const fs = 15 * s;
+    let y = this.staffToggle(a, s);
+    const intro = txt(this, a.x, y, `Cada servicio da experiencia según lo que aporta cada uno. Cada ${XP_PER_POINT} de experiencia, un punto para aprender una habilidad para siempre.`, fs * 0.78, {
+      wordWrap: { width: a.w },
+    }).setAlpha(0.75);
+    y += intro.height + 8;
+    const me = net.me;
+    const myKey = me ? chefKeyOf(me, info) : '';
+    // Los demás: resumen
+    for (const m of info.members) {
+      const t = c.chefs[chefKeyOf(m, info)] ?? { name: m.name, xp: 0, perks: [] };
+      const mine = m.id === net.id;
+      const perks = t.perks.length ? countPerks(t.perks) : 'sin habilidades todavía';
+      txt(this, a.x, y, `${m.name}${mine ? ' (tú)' : ''} · ${t.xp} exp · ${chefPoints(t)} ${chefPoints(t) === 1 ? 'punto' : 'puntos'}`, fs * 0.9, {
+        color: CHEF_COLORS[m.color][1],
+      });
+      const pt = txt(this, a.x, y + fs * 1.15, perks, fs * 0.72);
+      if (pt.width > a.w) pt.setScale(a.w / pt.width);
+      y += fs * 2.5;
+    }
+    // Tu cocinero: cuadrícula de habilidades; la elegida se explica abajo con su botón.
+    const mine = c.chefs[myKey] ?? { name: me?.name ?? '', xp: 0, perks: [] };
+    const points = chefPoints(mine);
+    y += 4;
+    txt(this, a.x, y, points > 0 ? `Tienes ${points} ${points === 1 ? 'punto' : 'puntos'}: elige qué aprender` : 'Aún no tienes puntos de formación', fs * 0.85, {
+      color: points > 0 ? '#2e8a34' : '#6b5a4a',
+    });
+    y += fs * 1.5;
+    const cols = 2;
+    const gap = 6;
+    const cw = (a.w - gap) / cols;
+    const ch = 30 * s;
+    TRAINABLE.forEach((perk, i) => {
+      const have = perkCount(mine.perks, perk.id);
+      const x = a.x + (i % cols) * (cw + gap) + cw / 2;
+      const cy = y + Math.floor(i / cols) * (ch + gap) + ch / 2;
+      new Button(this, x, cy, {
+        w: cw,
+        h: ch,
+        color: this.selectedPerk === perk.id ? COLORS.orange : have >= perk.max ? 0x5e8f52 : 0x8a7a6a,
+        label: `${perk.short}${have ? ` ${have}/${perk.max}` : ''}`,
+        fontSize: fs * 0.8,
+        onPress: () => {
+          this.selectedPerk = perk.id;
+          this.build();
+        },
+      });
+    });
+    y += Math.ceil(TRAINABLE.length / cols) * (ch + gap) + 6;
+    const sel = TRAINABLE.find((p) => p.id === this.selectedPerk) ?? TRAINABLE[0];
+    const have = perkCount(mine.perks, sel.id);
+    const can = points > 0 && have < sel.max;
+    txt(this, a.x, y, `${sel.name}${have ? ` (tienes ${have} de ${sel.max})` : ''}`, fs);
+    const d = txt(this, a.x, y + fs * 1.3, sel.description, fs * 0.82, { wordWrap: { width: a.w - 130 * s } }).setAlpha(0.8);
+    new Button(this, a.x + a.w - 60 * s, y + Math.max(d.height, fs * 2) / 2 + fs * 0.6, {
+      w: 118 * s,
+      h: 38 * s,
+      color: can ? 0xd4a017 : 0x9a8a7a,
+      label: have >= sel.max ? 'Al máximo' : 'Aprender',
+      fontSize: fs * 0.9,
+      onPress: () => {
+        if (!can) return;
+        audio.sfx('perk');
+        net.campaign('c:train', sel.id);
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------- pestaña: misiones
+
+  private tabMissions(c: Campaign, a: Area, s: number): void {
+    const fs = 15 * s;
+    let y = a.y;
+    const ch = currentChapter(c);
+    if (ch) {
+      txt(this, a.x, y, `Capítulo ${ch.n}: ${ch.title}`, fs * 1.15, { color: '#ff8a3d' });
+      y += fs * 1.6;
+      const story = txt(this, a.x, y, ch.story, fs * 0.8, { wordWrap: { width: a.w } }).setAlpha(0.8);
+      y += story.height + 6;
+      for (const o of ch.objectives(c)) {
+        txt(this, a.x + 4, y, `${o.done ? '✓' : '·'} ${o.text}`, fs * 0.88, { color: o.done ? '#2e8a34' : '#2b1d14' });
+        if (o.progress && !o.done) txt(this, a.x + a.w, y, o.progress, fs * 0.8).setOrigin(1, 0).setAlpha(0.7);
+        y += fs * 1.45;
+      }
+      txt(this, a.x, y, `Recompensa: ${ch.reward} monedas`, fs * 0.8, { color: '#d4a017' });
+      y += fs * 1.8;
+    } else {
+      const t = txt(this, a.x, y, '¡Habéis completado todos los capítulos de momento! Muy pronto: el segundo local y la cadena rival.', fs * 0.9, {
+        wordWrap: { width: a.w },
+        color: '#2e8a34',
+      });
+      y += t.height + 12;
+    }
+    this.add.rectangle(a.x, y - 6, a.w, 1, 0x2b1d14, 0.15).setOrigin(0);
+
+    // Concurso de los domingos
+    if (contestAvailable(c)) {
+      const p = contestParams(c, Math.max(1, net.info?.members.length ?? 1), net.info?.estilo ?? 'rol');
+      txt(this, a.x, y, '¡Hoy es domingo de concurso!', fs, { color: '#c0392b' });
+      y += fs * 1.4;
+      const t = txt(this, a.x, y, `Nivel ${contestLevel(c)} del Desafío: servid ${p.goal} pedidos. Premio ${CONTEST_PRIZE} y fama. Ese día no hay ventas normales (el patrocinador pone los ingredientes).`, fs * 0.78, {
+        wordWrap: { width: a.w - 130 * s },
+      }).setAlpha(0.8);
+      new Button(this, a.x + a.w - 60 * s, y + t.height / 2, {
+        w: 118 * s,
+        h: 36 * s,
+        color: c.contestToday ? COLORS.red : c.activeMission ? 0x9a8a7a : COLORS.green,
+        label: c.contestToday ? 'No ir' : 'Apuntarse',
+        fontSize: fs * 0.85,
+        onPress: () => !(c.activeMission && !c.contestToday) && net.campaign('c:contest', !c.contestToday),
+      });
+      y += Math.max(t.height, 40 * s) + 10;
+    } else {
+      const next = c.day + (7 - (c.day % 7));
+      txt(this, a.x, y, `Próximo concurso de cocina: domingo (día ${next}).`, fs * 0.8).setAlpha(0.7);
+      y += fs * 1.7;
+    }
+
+    // Tablón de encargos
+    txt(this, a.x, y, 'Tablón de encargos', fs);
+    y += fs * 1.4;
+    if (c.chapter < 2) {
+      txt(this, a.x, y, 'Se abre en el capítulo 2.', fs * 0.8).setAlpha(0.7);
+      return;
+    }
+    if (!c.board.length) {
+      txt(this, a.x, y, 'Hoy no hay encargos.', fs * 0.8).setAlpha(0.7);
+      return;
+    }
+    const help = txt(this, a.x, y, 'Aceptad uno para hoy. Si sale bien: dinero y reputación; si no, -2 de reputación.', fs * 0.72, { wordWrap: { width: a.w } }).setAlpha(0.7);
+    y += help.height + 8;
+    for (const m of c.board) {
+      const active = c.activeMission?.id === m.id;
+      const blocked = !!c.activeMission || c.contestToday;
+      if (active) this.add.rectangle(a.x - 4, y - 2, a.w + 8, 50 * s, 0xd9f2d0).setOrigin(0);
+      txt(this, a.x, y, `${m.title} · +${m.reward}`, fs * 0.92);
+      txt(this, a.x, y + fs * 1.2, m.text, fs * 0.78, { wordWrap: { width: a.w - 130 * s } }).setAlpha(0.8);
+      if (active) txt(this, a.x + a.w - 8, y + 18 * s, 'Aceptado', fs * 0.9, { color: '#2e8a34' }).setOrigin(1, 0.5);
+      else {
+        new Button(this, a.x + a.w - 60 * s, y + 18 * s, {
+          w: 118 * s,
+          h: 34 * s,
+          color: blocked ? 0x9a8a7a : COLORS.green,
+          label: 'Aceptar',
+          fontSize: fs * 0.85,
+          onPress: () => !blocked && net.campaign('c:mission', m.id),
+        });
+      }
+      y += 56 * s;
+    }
+  }
+
+  /** Aviso grande y breve (capítulo completado). */
+  private toast(title: string, sub: string): void {
+    audio.sfx('levelUp');
+    const { width: W, height: H } = this.scale;
+    const t1 = txt(this, W / 2, H * 0.4, title, 26, { color: '#7ee081', stroke: '#2b1d14', strokeThickness: 6, align: 'center', wordWrap: { width: W - 30 } })
+      .setOrigin(0.5)
+      .setDepth(200);
+    const t2 = txt(this, W / 2, H * 0.4 + 34, sub, 18, { color: '#fff4dc', stroke: '#2b1d14', strokeThickness: 5 }).setOrigin(0.5).setDepth(200);
+    this.tweens.add({ targets: [t1, t2], alpha: 0, delay: 2600, duration: 500, onComplete: () => this.build() });
   }
 
   // ---------------------------------------------------------------- pestaña: local
@@ -622,7 +834,25 @@ export class CampaignScene extends Phaser.Scene {
         wordWrap: { width: boxW - 28 },
       });
     }
-    y += panelH + 16 * s;
+    y += panelH + 10 * s;
+
+    // Progreso: encargo, concurso, capítulo y experiencia
+    const prog: [string, string][] = [];
+    if (r.contest) prog.push([r.contest.won ? `¡Concurso ganado! ${r.contest.served} de ${r.contest.goal}` : `Concurso: ${r.contest.served} de ${r.contest.goal}`, `+${r.contest.prize}`]);
+    if (r.mission) prog.push([`${r.mission.ok ? 'Encargo cumplido' : 'Encargo fallido'}: ${r.mission.title} (${r.mission.progress})`, r.mission.ok ? `+${r.mission.reward}` : `${r.mission.rep} rep.`]);
+    if (r.chapterDone) prog.push([`¡Capítulo ${r.chapterDone.n} completado! ${r.chapterDone.title}`, `+${r.chapterDone.reward}`]);
+    for (const x of r.xp ?? []) prog.push([`${x.name}: +${x.gained} de experiencia${x.newPoints ? ` · ¡${x.newPoints} punto${x.newPoints > 1 ? 's' : ''} nuevo${x.newPoints > 1 ? 's' : ''}!` : ''}`, '']);
+    if (prog.length) {
+      const ph = prog.length * lineH + 18;
+      pixelPanel(g, x0, y, boxW, ph, 0xfff0c8);
+      prog.forEach(([label, value], i) => {
+        const good = !label.startsWith('Encargo fallido');
+        const lt = txt(this, x0 + 14, y + 9 + i * lineH, label, fs * 0.85, { color: good ? '#2b1d14' : '#c0392b' });
+        if (lt.width > boxW - 90) lt.setScale((boxW - 90) / lt.width);
+        if (value) txt(this, x0 + boxW - 14, y + 9 + i * lineH, value, fs * 0.9, { color: good ? '#2e8a34' : '#c0392b' }).setOrigin(1, 0);
+      });
+      y += ph + 10 * s;
+    }
 
     if (r.bankrupt) audio.sfx('runOver');
     const by = Math.min(H - 40 * s, y + 30 * s);
@@ -642,6 +872,18 @@ interface Area {
   y: number;
   w: number;
   h: number;
+}
+
+/** Clave de la formación de un cocinero (la misma que usa el servidor). */
+function chefKeyOf(m: { name: string; chefKey?: string }, _info: RoomInfo): string {
+  return m.chefKey ?? `web:${m.name}`;
+}
+
+/** «Zapatillas ×2 · Termómetro». */
+function countPerks(perks: string[]): string {
+  const counts = new Map<string, number>();
+  for (const id of perks) counts.set(id, (counts.get(id) ?? 0) + 1);
+  return [...counts].map(([id, n]) => `${getPerk(id)?.short ?? id}${n > 1 ? ` ×${n}` : ''}`).join(' · ');
 }
 
 /** Resultado neto del día (lo que ganó o perdió el restaurante). */

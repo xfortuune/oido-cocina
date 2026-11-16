@@ -219,7 +219,21 @@ Cada día tiene tres partes:
    Si el día acaba en negativo, el banco presta lo que falte con un 10 % de comisión; con más de **400 de deuda**,
    **bancarrota**: se empieza de nuevo (se guarda el mejor día en el «salón de la fama»).
 
-La lógica está en `shared/src/campaign.ts`. Próximas fases: capítulos y misiones, segundo local.
+### Progresión: capítulos, encargos, concurso y formación
+
+- **Capítulos** (pestaña Misiones), con historia, objetivos y recompensa:
+  1. *El puesto del barrio*: llegar al día 8 y devolver toda la deuda (+60).
+  2. *La hora punta*: reputación 65, un empleado, 60 hamburguesas y 2 encargos del tablón (+120).
+  3. *El concurso del barrio*: saber 4 recetas, ganar un concurso y tener 300 monedas (+200).
+- **Tablón de encargos** (desde el capítulo 2): dos por mañana; se acepta uno para el servicio de ese día
+  (boda, crítico, festival, inspección sanitaria, excursión del colegio). Bien: dinero y reputación; mal: -2 de reputación.
+- **Concurso de cocina, los domingos**: en lugar del servicio normal, un nivel del Desafío (cada vez más difícil) con
+  objetivo de pedidos e ingredientes del patrocinador. Ganar da 100 y +5 de reputación; perder, 20 de consolación.
+- **Formación** (Personal → Vuestros cocineros): cada servicio da experiencia según lo que aporta cada uno; cada 40,
+  un punto para aprender para siempre una habilidad del Desafío. Se guarda por cuenta de Discord (en el navegador,
+  por nombre) y se conserva aunque el restaurante quiebre.
+
+La lógica está en `shared/src/campaign.ts` y `shared/src/progress.ts`. Próxima fase: el segundo local, la cadena rival y el final.
 
 **Guardado en Railway:** monta un **Volume** en `/data` y añade la variable `DATA_DIR=/data`. Ahí se guardan las campañas
 y el ranking; sin volumen se borrarían en cada despliegue.

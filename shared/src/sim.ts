@@ -154,6 +154,10 @@ export interface TurnStats {
   trashed: number;
   tips: number;
   earned: number;
+  /** Hamburguesas servidas de cada receta (para los encargos de la campaña). */
+  byRecipe?: Record<string, number>;
+  /** Pedidos servidos con hamburguesa, patatas y bebida. */
+  combos?: number;
 }
 
 export type SimEvent =
@@ -183,6 +187,7 @@ export interface SimSnapshot {
   goal: number;
   /** Campaña: día del restaurante (0 en el Desafío) y existencias de cada caja. */
   day: number;
+  contest: boolean;
   stock: Record<string, number> | null;
   money: number;
   reputation: number;
@@ -205,7 +210,9 @@ export class KitchenSim {
   money = 0;
   reputation = CONFIG.startReputation;
   orders: Order[] = [];
-  stats: TurnStats = { served: 0, perfect: 0, wrong: 0, lost: 0, burnt: 0, trashed: 0, tips: 0, earned: 0 };
+  stats: TurnStats = { served: 0, perfect: 0, wrong: 0, lost: 0, burnt: 0, trashed: 0, tips: 0, earned: 0, byRecipe: {}, combos: 0 };
+  /** Campaña: el servicio es un concurso de cocina (con objetivo, como el Desafío). */
+  contest = false;
   ended = false;
   endReason: EndReason | null = null;
   /** Duración de la ronda en segundos (se puede acortar para pruebas). */
@@ -514,6 +521,7 @@ export class KitchenSim {
       level: this.level,
       goal: this.goal,
       day: this.day,
+      contest: this.contest,
       stock: this.stock,
       money: this.money,
       reputation: this.reputation,
@@ -537,6 +545,7 @@ export class KitchenSim {
     this.level = s.level;
     this.goal = s.goal;
     this.day = s.day;
+    this.contest = s.contest;
     this.stock = s.stock;
     this.money = s.money;
     this.reputation = s.reputation;
@@ -726,6 +735,9 @@ export class KitchenSim {
     this.money += earned + tip;
     this.reputation = Math.min(CONFIG.maxReputation, this.reputation + (perfect ? 2 : 1));
     this.stats.served++;
+    const by = (this.stats.byRecipe ??= {});
+    by[order.recipeId] = (by[order.recipeId] ?? 0) + 1;
+    if (order.fries && order.drink) this.stats.combos = (this.stats.combos ?? 0) + 1;
     this.stats.earned += earned + tip;
     this.stats.tips += tip;
     if (perfect) this.stats.perfect++;

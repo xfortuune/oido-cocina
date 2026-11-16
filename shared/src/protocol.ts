@@ -19,6 +19,8 @@
 //   'c:menu'   { id, on }: quitar o poner una receta en la carta
 //   'c:learn'  recipeId: aprender (comprar) una receta
 //   'c:loan'   number: pedir un préstamo     'c:repay' number: devolver deuda
+//   'c:hire'   StaffId: contratar            'c:fire' StaffId: despedir
+//   'c:upgrade' id: comprar una mejora o decoración del local (LOCAL_UPGRADES)
 //   'ready'    listo para abrir el restaurante (cuando lo están todos, empieza el servicio)
 //   'c:next'   en el cierre: pasar a la mañana del día siguiente
 //   'modo'     number: cambiar cuántos jugadores se esperan (2-4, en el vestíbulo)

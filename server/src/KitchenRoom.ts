@@ -22,6 +22,11 @@ import {
   ROLES,
   TICK_MS,
   buyStock,
+  buyLocalUpgrade,
+  fire,
+  hasStaff,
+  hire,
+  serviceUpgrades,
   closeDay,
   learnRecipe,
   newCampaign,
@@ -367,6 +372,9 @@ export class KitchenRoom extends Room {
     this.onMessage('c:learn', (_cl, id: string) => manage((c) => learnRecipe(c, String(id))));
     this.onMessage('c:loan', (_cl, n: number) => manage((c) => takeLoan(c, n)));
     this.onMessage('c:repay', (_cl, n: number) => manage((c) => repay(c, n)));
+    this.onMessage('c:hire', (_cl, id: string) => manage((c) => hire(c, String(id))));
+    this.onMessage('c:fire', (_cl, id: string) => manage((c) => fire(c, String(id))));
+    this.onMessage('c:upgrade', (_cl, id: string) => manage((c) => buyLocalUpgrade(c, String(id))));
     // Del cierre a la mañana siguiente (cualquiera).
     this.onMessage('c:next', () => {
       if (this.phase !== 'cierre') return;
@@ -387,9 +395,10 @@ export class KitchenRoom extends Room {
     if (!c) return;
     this.modo = Math.max(1, Math.min(MAX_PLAYERS, this.members.size));
     this.assignRoles();
-    const sim = new KitchenSim(serviceParams(c, this.modo, this.estilo), Math.random, this.mejoras);
+    const sim = new KitchenSim(serviceParams(c, this.modo, this.estilo), Math.random, serviceUpgrades(c));
     sim.moveOnTick = false;
-    sim.needsCaja = this.modo > 1 && this.estilo === 'rol';
+    // Con camarero, nadie tiene que tomar nota.
+    sim.needsCaja = this.modo > 1 && this.estilo === 'rol' && !hasStaff(c, 'camarero');
     sim.day = c.day;
     sim.stock = stockForService(c);
     sim.prices = servicePrices(c);

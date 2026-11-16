@@ -425,7 +425,12 @@ export class KitchenSim {
           st.rate =
             (1 + 0.25 * perkCount(p.perks, grill ? 'vuelta' : 'aceite')) *
             (this.upgrades.includes(grill ? 'parrilla' : 'freidora') ? (grill ? 1.2 : 1.3) : 1);
-          st.burnRate = (1 + 0.6 * perkCount(p.perks, 'termometro')) * (this.upgrades.includes('extintor') ? 1.3 : 1);
+          st.burnRate =
+            (1 + 0.6 * perkCount(p.perks, 'termometro')) *
+            (this.upgrades.includes('extintor') ? 1.3 : 1) *
+            (this.upgrades.includes('pinche') ? 1.5 : 1);
+          // Campaña: el ayudante acelera la freidora.
+          if (!grill && this.upgrades.includes('ayudante')) st.rate *= 1.25;
           p.holding = null;
           st0.cooked++;
         }
@@ -436,7 +441,10 @@ export class KitchenSim {
         if (!held && !st.item) {
           if (!this.take('refresco', p.id)) return;
           st.item = { kind: 'drink', flavor: t.flavor!, fill: 0 };
-          st.rate = (1 + 0.35 * perkCount(p.perks, 'grifo')) * (this.upgrades.includes('dispensador') ? 1.4 : 1);
+          st.rate =
+            (1 + 0.35 * perkCount(p.perks, 'grifo')) *
+            (this.upgrades.includes('dispensador') ? 1.4 : 1) *
+            (this.upgrades.includes('ayudante') ? 1.25 : 1);
           st0.cooked++;
         }
         else if (!held && st.item?.kind === 'drink' && st.item.fill >= 1) {

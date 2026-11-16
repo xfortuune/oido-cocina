@@ -203,16 +203,23 @@ Cada día tiene tres partes:
      cada día («barato hoy» / «caro hoy») y cada cosa caduca (la lechuga a los 2 días, la carne a los 3…).
    - **Carta**: qué hamburguesas se ofrecen y a qué precio (de la mitad al triple del normal). Más barato atrae más
      clientes; demasiado caro los espanta y baja la reputación. Las recetas nuevas se **aprenden** pagando.
+   - **Personal**: contratar y despedir. Cada uno cobra un sueldo diario y da un efecto pasivo:
+     camarero (12, toma nota solo y los clientes esperan un 10 % más), pinche (10, todo tarda un 50 % más en quemarse),
+     ayudante (10, patatas y bebidas un 25 % antes), repartidor (14, pedidos a domicilio al cerrar según la reputación,
+     un 20 % más caros y con ingredientes de la despensa) y encargado (12, la despensa un 20 % más barata).
+   - **Local**: mejoras permanentes de **cocina** (tercera plancha, plancha de hierro, freidora industrial, dispensador,
+     extintor, cámara frigorífica que alarga la caducidad un día) y **decoración** (terraza, tarro de propinas, plantas,
+     cuadros, música, neón y mesas, que atraen más clientes).
    - **Banco**: pedir préstamos (3 % de interés al día) y devolverlos.
    Cuando todos pulsan «¡Abrir!», empieza el servicio.
 2. **Servicio**: la cocina de siempre, pero cada caja tiene las **unidades reales** de la despensa (si se acaba la carne,
    no hay más hasta mañana), solo se piden platos de la carta y se cobra a vuestros precios. La gente que viene depende
    de los precios, la reputación y el día de la semana (el fin de semana, más).
-3. **Cierre**: ventas, propinas, multas, compras, alquiler (15), intereses, lo caducado y la reputación.
+3. **Cierre**: ventas, propinas, multas, repartos, compras, alquiler (15), sueldos, intereses, lo caducado y la reputación.
    Si el día acaba en negativo, el banco presta lo que falte con un 10 % de comisión; con más de **400 de deuda**,
    **bancarrota**: se empieza de nuevo (se guarda el mejor día en el «salón de la fama»).
 
-La lógica está en `shared/src/campaign.ts`. Próximas fases: personal y local, capítulos y misiones, segundo local.
+La lógica está en `shared/src/campaign.ts`. Próximas fases: capítulos y misiones, segundo local.
 
 **Guardado en Railway:** monta un **Volume** en `/data` y añade la variable `DATA_DIR=/data`. Ahí se guardan las campañas
 y el ranking; sin volumen se borrarían en cada despliegue.

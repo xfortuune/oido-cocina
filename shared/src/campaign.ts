@@ -69,6 +69,102 @@ export const RECIPE_COST: Record<string, number> = {
 
 export const SIDE_BASE = { fries: 3, drink: 2 };
 
+// ---------------------------------------------------------------- personal y local
+
+export type StaffId = 'camarero' | 'pinche' | 'ayudante' | 'repartidor' | 'encargado';
+
+export interface StaffInfo {
+  id: StaffId;
+  name: string;
+  description: string;
+  /** Sueldo por día (se paga al cerrar). */
+  wage: number;
+}
+
+export const STAFF: StaffInfo[] = [
+  { id: 'camarero', name: 'Camarero', description: 'Toma nota a los clientes (la caja no tiene que hacerlo) y esperan un 10 % más.', wage: 12 },
+  { id: 'pinche', name: 'Pinche', description: 'Vigila los fogones: todo tarda un 50 % más en quemarse.', wage: 10 },
+  { id: 'ayudante', name: 'Ayudante', description: 'Patatas y bebidas salen un 25 % antes.', wage: 10 },
+  { id: 'repartidor', name: 'Repartidor', description: 'Pedidos a domicilio al cerrar (un 20 % más caros): más cuanta más reputación. Gastan ingredientes.', wage: 14 },
+  { id: 'encargado', name: 'Encargado', description: 'Negocia con los proveedores: la despensa sale un 20 % más barata.', wage: 12 },
+];
+
+export type LocalKind = 'cocina' | 'deco';
+
+export interface LocalUpgrade {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  kind: LocalKind;
+  /** Decoración: cuánto más atrae al público (0,05 = 5 % más clientes). */
+  appeal?: number;
+}
+
+/**
+ * Mejoras permanentes del local. Las de cocina usan los mismos efectos que la tienda del Desafío
+ * (los mismos identificadores, que entiende la simulación).
+ */
+export const LOCAL_UPGRADES: LocalUpgrade[] = [
+  { id: 'plancha3', name: 'Tercera plancha', description: 'Una plancha más, debajo de la mesa de montaje.', price: 180, kind: 'cocina' },
+  { id: 'parrilla', name: 'Plancha de hierro', description: 'Toda la carne se hace un 20 % antes.', price: 140, kind: 'cocina' },
+  { id: 'freidora', name: 'Freidora industrial', description: 'Todas las patatas se fríen un 30 % antes.', price: 120, kind: 'cocina' },
+  { id: 'dispensador', name: 'Dispensador doble', description: 'Todos los vasos se llenan un 40 % antes.', price: 100, kind: 'cocina' },
+  { id: 'extintor', name: 'Extintor', description: 'Lo quemado no cuesta dinero y tarda un 30 % más en quemarse.', price: 90, kind: 'cocina' },
+  { id: 'camara', name: 'Cámara frigorífica', description: 'Lo que compréis dura un día más.', price: 150, kind: 'cocina' },
+  { id: 'terraza', name: 'Terraza con sombrillas', description: 'Los clientes esperan un 15 % más.', price: 160, kind: 'deco' },
+  { id: 'tarro', name: 'Tarro de propinas', description: 'Las propinas valen el doble.', price: 80, kind: 'deco' },
+  { id: 'plantas', name: 'Plantas', description: 'Un poco de verde: 4 % más clientes.', price: 40, kind: 'deco', appeal: 0.04 },
+  { id: 'cuadros', name: 'Cuadros', description: 'Las paredes con arte local: 5 % más clientes.', price: 60, kind: 'deco', appeal: 0.05 },
+  { id: 'musica', name: 'Música ambiente', description: 'Un tocadiscos: 7 % más clientes.', price: 90, kind: 'deco', appeal: 0.07 },
+  { id: 'neon', name: 'Cartel de neón', description: 'Se ve desde la otra calle: 10 % más clientes.', price: 120, kind: 'deco', appeal: 0.1 },
+  { id: 'mesas', name: 'Mesas nuevas', description: 'Más sitio para sentarse: 10 % más clientes.', price: 150, kind: 'deco', appeal: 0.1 },
+];
+
+const LOCAL_BY_ID = new Map(LOCAL_UPGRADES.map((u) => [u.id, u]));
+export function getLocalUpgrade(id: string): LocalUpgrade | undefined {
+  return LOCAL_BY_ID.get(id);
+}
+
+export function hasStaff(c: Campaign, id: StaffId): boolean {
+  return c.staff.includes(id);
+}
+
+export function wagesPerDay(c: Campaign): number {
+  return STAFF.filter((s) => c.staff.includes(s.id)).reduce((n, s) => n + s.wage, 0);
+}
+
+export function hire(c: Campaign, id: string): boolean {
+  if (!STAFF.some((s) => s.id === id) || c.staff.includes(id as StaffId)) return false;
+  c.staff.push(id as StaffId);
+  return true;
+}
+
+export function fire(c: Campaign, id: string): boolean {
+  if (!c.staff.includes(id as StaffId)) return false;
+  c.staff = c.staff.filter((s) => s !== id);
+  return true;
+}
+
+export function buyLocalUpgrade(c: Campaign, id: string): boolean {
+  const u = getLocalUpgrade(id);
+  if (!u || c.upgrades.includes(id) || c.money < u.price) return false;
+  c.money -= u.price;
+  c.spentToday += u.price;
+  c.upgrades.push(id);
+  return true;
+}
+
+/** Lo que la cocina tiene en cuenta en el servicio: mejoras del local y personal con efecto en los fogones. */
+export function serviceUpgrades(c: Campaign): string[] {
+  return [...c.upgrades, ...c.staff];
+}
+
+/** Clientes de más por la decoración (0,1 = 10 %). */
+export function decorAppeal(c: Campaign): number {
+  return c.upgrades.reduce((n, id) => n + (getLocalUpgrade(id)?.appeal ?? 0), 0);
+}
+
 export const CAMPAIGN = {
   startMoney: 150,
   startDebt: 100,
@@ -92,9 +188,13 @@ export interface DayReport {
   tips: number;
   /** Multas del servicio: pedidos equivocados, clientes perdidos, cosas tiradas o quemadas. */
   penalties: number;
-  /** Gastado hoy en la despensa y en recetas. */
+  /** Gastado hoy en la despensa, recetas y mejoras. */
   purchases: number;
   rent: number;
+  wages: number;
+  /** Repartos a domicilio (con repartidor). */
+  deliveries: number;
+  deliveryIncome: number;
   interest: number;
   expired: { id: StockId; qty: number }[];
   /** Préstamo automático para no acabar el día en negativo (incluye la comisión). */
@@ -122,6 +222,10 @@ export interface Campaign {
   sides: { fries: number; drink: number };
   /** Gastado hoy (para el informe del cierre). */
   spentToday: number;
+  /** Personal contratado (cobra cada día). */
+  staff: StaffId[];
+  /** Mejoras permanentes del local y decoración. */
+  upgrades: string[];
   lastReport: DayReport | null;
   /** Lo que queda de partidas anteriores tras una bancarrota. */
   fame: { quiebras: number; mejorDia: number };
@@ -161,6 +265,8 @@ export function newCampaign(key: string, fame = { quiebras: 0, mejorDia: 0 }): C
     },
     menu: RECIPES.map((r) => ({ recipeId: r.id, price: r.price, on: RECIPE_COST[r.id] === 0 })),
     learnedRecipes: [],
+    staff: [],
+    upgrades: [],
     sides: { ...SIDE_BASE },
     spentToday: 0,
     lastReport: null,
@@ -187,7 +293,8 @@ export function priceFactor(day: number, id: StockId): number {
 
 export function packPriceToday(c: Campaign, id: StockId): number {
   const s = getStock(id)!;
-  return Math.max(1, Math.round(s.packPrice * priceFactor(c.day, id)));
+  const boss = hasStaff(c, 'encargado') ? 0.8 : 1;
+  return Math.max(1, Math.round(s.packPrice * priceFactor(c.day, id) * boss));
 }
 
 export function stockCount(c: Campaign, id: StockId): number {
@@ -206,7 +313,9 @@ export function buyStock(c: Campaign, id: StockId): boolean {
   if (c.money < price) return false;
   c.money -= price;
   c.spentToday += price;
-  c.stock[id].push({ qty: s.pack, expires: c.day + s.life - 1 });
+  // Con cámara frigorífica, todo dura un día más.
+  const life = s.life + (c.upgrades.includes('camara') ? 1 : 0);
+  c.stock[id].push({ qty: s.pack, expires: c.day + life - 1 });
   return true;
 }
 
@@ -294,7 +403,8 @@ export function demandFactor(c: Campaign): number {
   const appeal = items.reduce((n, m) => n + priceAppeal(getRecipe(m.recipeId).price, m.price), 0) / Math.max(1, items.length);
   const variety = 1 + 0.06 * (items.length - 1);
   const rep = 0.55 + (c.reputation / 100) * 0.9;
-  return Math.max(0.3, Math.min(2.2, appeal * variety * rep * weekdayFactor(c.day)));
+  const decor = 1 + decorAppeal(c);
+  return Math.max(0.3, Math.min(2.5, appeal * variety * rep * decor * weekdayFactor(c.day)));
 }
 
 /** La dificultad de la cocina crece con los días (como los niveles del Desafío, pero más despacio). */
@@ -309,8 +419,10 @@ export function serviceParams(c: Campaign, players: number, estilo: Estilo): Lev
   const recipes = menuOn(c).map((m) => m.recipeId);
   // Patatas y bebida caras se piden menos.
   const sideAppeal = (priceAppeal(SIDE_BASE.fries, c.sides.fries) + priceAppeal(SIDE_BASE.drink, c.sides.drink)) / 2;
+  // Con camarero, los clientes esperan un 10 % más.
   const params: LevelParams = {
     ...p,
+    patience: p.patience * (hasStaff(c, 'camarero') ? 1.1 : 1),
     duration: Math.max(120, p.duration),
     spawnStart: p.spawnStart / d,
     spawnEnd: p.spawnEnd / d,
@@ -379,9 +491,14 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
   const repFromPrices = ratio > 1.5 ? -4 : ratio > 1.25 ? -2 : ratio < 0.85 ? 1 : 0;
   c.reputation = Math.max(0, Math.min(100, Math.round(r.reputation) + repFromPrices));
 
+  // Repartos a domicilio: con lo que quede en la despensa, más cuanta más reputación.
+  const { count: deliveries, income: deliveryIncome } = hasStaff(c, 'repartidor') ? deliver(c, Math.floor(c.reputation / 8)) : { count: 0, income: 0 };
+  c.money += deliveryIncome;
+
   const rent = CAMPAIGN.rent;
   const interest = Math.ceil(c.debt * CAMPAIGN.interest);
-  c.money -= rent + interest;
+  const wages = wagesPerDay(c);
+  c.money -= rent + interest + wages;
 
   const expired: DayReport['expired'] = [];
   for (const s of STOCK) {
@@ -409,6 +526,9 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
     penalties: r.money - r.earned,
     purchases: c.spentToday,
     rent,
+    wages,
+    deliveries,
+    deliveryIncome,
     interest,
     expired,
     emergencyLoan,
@@ -428,6 +548,35 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
   return report;
 }
 
+/** Prepara hasta `max` pedidos a domicilio con lo que haya en la despensa (cobrados a precio de carta). */
+function deliver(c: Campaign, max: number): { count: number; income: number } {
+  const items = menuOn(c);
+  let count = 0;
+  let income = 0;
+  for (let i = 0; i < max * items.length && count < max; i++) {
+    const item = items[i % items.length];
+    const needs: Partial<Record<StockId, number>> = {};
+    for (const l of getRecipe(item.recipeId).layers) needs[l as StockId] = (needs[l as StockId] ?? 0) + 1;
+    if (!Object.entries(needs).every(([id, n]) => stockCount(c, id as StockId) >= (n as number))) continue;
+    for (const [id, n] of Object.entries(needs)) takeUnits(c, id as StockId, n as number);
+    count++;
+    // A domicilio se cobra un 20 % más.
+    income += Math.round(item.price * 1.2);
+  }
+  return { count, income };
+}
+
+/** Saca unidades de la despensa, empezando por lo que caduca antes. */
+function takeUnits(c: Campaign, id: StockId, n: number): void {
+  const lots = c.stock[id].sort((a, b) => a.expires - b.expires);
+  for (const lot of lots) {
+    const take = Math.min(lot.qty, n);
+    lot.qty -= take;
+    n -= take;
+  }
+  c.stock[id] = lots.filter((l) => l.qty > 0);
+}
+
 /** Comprueba y completa una campaña leída del disco (por si es de una versión anterior). */
 export function reviveCampaign(raw: unknown, key: string): Campaign {
   const base = newCampaign(key);
@@ -437,5 +586,7 @@ export function reviveCampaign(raw: unknown, key: string): Campaign {
   for (const s of STOCK) if (!Array.isArray(out.stock?.[s.id])) out.stock = { ...out.stock, [s.id]: [] };
   for (const r of RECIPES) if (!out.menu.some((m) => m.recipeId === r.id)) out.menu.push({ recipeId: r.id, price: r.price, on: false });
   if (!Array.isArray(out.learnedRecipes)) out.learnedRecipes = [];
+  if (!Array.isArray(out.staff)) out.staff = [];
+  if (!Array.isArray(out.upgrades)) out.upgrades = [];
   return out;
 }

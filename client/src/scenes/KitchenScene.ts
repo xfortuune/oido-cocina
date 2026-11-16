@@ -4,6 +4,7 @@ import {
   CUSTOMER_SLOTS_X,
   CUSTOMER_Y,
   EMOTES,
+  serviceUpgrades,
   getRecipe,
   KitchenSim,
   ROLE_NAMES,
@@ -91,7 +92,9 @@ export class KitchenScene extends Phaser.Scene {
 
   create(): void {
     // Con las mejoras de la tienda (la tercera plancha cambia el plano).
-    this.sim = new KitchenSim(undefined, undefined, net.info?.mejoras ?? []);
+    const info = net.info;
+    const upgrades = info?.juego === 'campana' && info.campana ? serviceUpgrades(info.campana) : (info?.mejoras ?? []);
+    this.sim = new KitchenSim(undefined, undefined, upgrades);
     this.sim.moveOnTick = false;
     if (net.snapshot) this.sim.applySnapshot(net.snapshot, net.id);
 

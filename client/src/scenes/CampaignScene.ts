@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import {
   CAMPAIGN,
+  decorAppeal,
+  hasStaff,
+  LOCAL_UPGRADES,
+  STAFF,
+  wagesPerDay,
+  type LocalKind,
   ESTILO_NAMES,
   ESTILOS,
   expectedCustomers,
@@ -36,11 +42,13 @@ import { addAvatar, loadAvatars } from '../ui/avatars';
 import { Button } from '../ui/Button';
 import { addSoundToggle } from '../ui/SoundToggle';
 
-type Tab = 'hoy' | 'despensa' | 'carta' | 'banco';
+type Tab = 'hoy' | 'despensa' | 'carta' | 'personal' | 'local' | 'banco';
 const TABS: [Tab, string][] = [
   ['hoy', 'Hoy'],
   ['despensa', 'Despensa'],
   ['carta', 'Carta'],
+  ['personal', 'Personal'],
+  ['local', 'Local'],
   ['banco', 'Banco'],
 ];
 
@@ -62,6 +70,8 @@ const STOCK_ICON: Record<StockId, string> = {
  */
 export class CampaignScene extends Phaser.Scene {
   private tab: Tab = 'hoy';
+  /** Pestaña «Local»: mejoras de cocina o decoración. */
+  private localKind: LocalKind = 'cocina';
   private status = '';
 
   constructor() {
@@ -173,12 +183,16 @@ export class CampaignScene extends Phaser.Scene {
     const boxW = Math.min(W - 16, 620);
     const x0 = W / 2 - boxW / 2;
 
-    // Pestañas
-    const tabW = (boxW - 18) / 4;
+    // Pestañas: en una fila si caben; si no, en dos de tres.
+    const perRow = boxW >= 560 ? TABS.length : 3;
+    const tabW = (boxW - 6 * (perRow - 1)) / perRow;
+    const tabH = 34 * s;
     TABS.forEach(([id, label], i) => {
-      new Button(this, x0 + tabW / 2 + i * (tabW + 6), y + 18 * s, {
+      const col = i % perRow;
+      const row = Math.floor(i / perRow);
+      new Button(this, x0 + tabW / 2 + col * (tabW + 6), y + tabH / 2 + row * (tabH + 6), {
         w: tabW,
-        h: 36 * s,
+        h: tabH,
         color: this.tab === id ? COLORS.orange : 0x6b5a4a,
         label,
         fontSize: 15 * s,
@@ -188,7 +202,7 @@ export class CampaignScene extends Phaser.Scene {
         },
       });
     });
-    y += 44 * s;
+    y += Math.ceil(TABS.length / perRow) * (tabH + 6) + 4;
 
     const bottom = H - 70 * s;
     const g = this.add.graphics();
@@ -197,6 +211,8 @@ export class CampaignScene extends Phaser.Scene {
     if (this.tab === 'hoy') this.tabToday(info, c, area, s);
     else if (this.tab === 'despensa') this.tabPantry(c, area, s);
     else if (this.tab === 'carta') this.tabMenu(c, area, s);
+    else if (this.tab === 'personal') this.tabStaff(c, area, s);
+    else if (this.tab === 'local') this.tabLocal(c, area, s);
     else this.tabBank(c, area, s);
 
     // Abajo: salir y abrir el restaurante (cuando todos están listos)
@@ -239,11 +255,13 @@ export class CampaignScene extends Phaser.Scene {
       ['Clientes previstos', `unos ${expected}`],
       ['Hamburguesas que da la despensa', `${burgers}`],
       ['En la carta', menuOn(c).map((m) => getRecipe(m.recipeId).name).join(', ')],
-      ['Gastos del día', `alquiler ${CAMPAIGN.rent} + intereses ${Math.ceil(c.debt * CAMPAIGN.interest)}`],
+      ...(c.staff.length ? ([['Personal', STAFF.filter((x) => c.staff.includes(x.id)).map((x) => x.name).join(', ')]] as [string, string][]) : []),
+      ...(decorAppeal(c) ? ([['Decoración', `${Math.round(decorAppeal(c) * 100)} % más clientes`]] as [string, string][]) : []),
+      ['Gastos del día', `alquiler ${CAMPAIGN.rent} + intereses ${Math.ceil(c.debt * CAMPAIGN.interest)}${wagesPerDay(c) ? ` + sueldos ${wagesPerDay(c)}` : ''}`],
     ];
     const prev = c.lastReport;
     if (prev && !prev.bankrupt) {
-      const result = prev.sales + prev.tips + prev.penalties - prev.purchases - prev.rent - prev.interest;
+      const result = dayResult(prev);
       lines.push(['Ayer', `${prev.served} servidos · ${result >= 0 ? '+' : ''}${result}`]);
     }
     for (const [label, value] of lines) {
@@ -429,6 +447,83 @@ export class CampaignScene extends Phaser.Scene {
     priceRow(yS + rowH, 'drink', 'Refresco', SIDE_BASE.drink, c.sides.drink, (cx, cy) => this.add.image(cx, cy, 'side_vaso_naranja').setScale(Math.max(1, Math.round(rowH / 28))), null);
   }
 
+  // ---------------------------------------------------------------- pestaña: personal
+
+  private tabStaff(c: Campaign, a: Area, s: number): void {
+    const fs = 15 * s;
+    txt(this, a.x, a.y, `Sueldos: ${wagesPerDay(c)} al día. Se pagan al cerrar.`, fs * 0.85).setAlpha(0.7);
+    const top = a.y + fs * 1.8;
+    const rowH = Math.min(84 * s, (a.h - (top - a.y)) / STAFF.length);
+    STAFF.forEach((st, i) => {
+      const y = top + i * rowH;
+      const hired = hasStaff(c, st.id);
+      if (hired) this.add.rectangle(a.x - 4, y, a.w + 8, rowH - 4, 0xd9f2d0).setOrigin(0);
+      txt(this, a.x + 4, y + 6, `${st.name} · ${st.wage} al día`, fs);
+      txt(this, a.x + 4, y + 6 + fs * 1.25, st.description, fs * 0.78, { wordWrap: { width: a.w - 130 * s } }).setAlpha(0.8);
+      new Button(this, a.x + a.w - 58 * s, y + rowH / 2 - 2, {
+        w: 112 * s,
+        h: 36 * s,
+        color: hired ? COLORS.red : COLORS.green,
+        label: hired ? 'Despedir' : 'Contratar',
+        fontSize: fs * 0.9,
+        onPress: () => net.campaign(hired ? 'c:fire' : 'c:hire', st.id),
+      });
+      this.add.rectangle(a.x, y + rowH - 2, a.w, 1, 0x2b1d14, 0.12).setOrigin(0);
+    });
+  }
+
+  // ---------------------------------------------------------------- pestaña: local
+
+  private tabLocal(c: Campaign, a: Area, s: number): void {
+    const fs = 15 * s;
+    // Cocina o decoración
+    const sw = (a.w - 8) / 2;
+    (['cocina', 'deco'] as LocalKind[]).forEach((k, i) => {
+      new Button(this, a.x + sw / 2 + i * (sw + 8), a.y + 16 * s, {
+        w: sw,
+        h: 32 * s,
+        color: this.localKind === k ? COLORS.blue : 0x8a7a6a,
+        label: k === 'cocina' ? 'Cocina' : 'Decoración',
+        fontSize: fs * 0.9,
+        onPress: () => {
+          this.localKind = k;
+          this.build();
+        },
+      });
+    });
+    let top = a.y + 40 * s;
+    if (this.localKind === 'deco') {
+      txt(this, a.x, top, `La decoración atrae un ${Math.round(decorAppeal(c) * 100)} % más de clientes.`, fs * 0.85).setAlpha(0.7);
+      top += fs * 1.7;
+    }
+    const list = LOCAL_UPGRADES.filter((u) => u.kind === this.localKind);
+    const rowH = Math.min(66 * s, (a.h - (top - a.y)) / list.length);
+    list.forEach((u, i) => {
+      const y = top + i * rowH;
+      const owned = c.upgrades.includes(u.id);
+      if (owned) this.add.rectangle(a.x - 4, y, a.w + 8, rowH - 4, 0xd9f2d0).setOrigin(0);
+      txt(this, a.x + 4, y + 4, u.name, fs * 0.95);
+      txt(this, a.x + 4, y + 4 + fs * 1.2, u.description, fs * 0.75, { wordWrap: { width: a.w - 130 * s } }).setAlpha(0.8);
+      if (owned) {
+        txt(this, a.x + a.w - 8, y + rowH / 2 - 2, 'Comprado', fs * 0.9, { color: '#2e8a34' }).setOrigin(1, 0.5);
+      } else {
+        new Button(this, a.x + a.w - 58 * s, y + rowH / 2 - 2, {
+          w: 112 * s,
+          h: Math.min(36 * s, rowH * 0.6),
+          color: c.money >= u.price ? 0xd4a017 : 0x9a8a7a,
+          label: `Comprar · ${u.price}`,
+          fontSize: fs * 0.85,
+          onPress: () => {
+            if (c.money < u.price) return;
+            audio.sfx('coin');
+            net.campaign('c:upgrade', u.id);
+          },
+        });
+      }
+      this.add.rectangle(a.x, y + rowH - 2, a.w, 1, 0x2b1d14, 0.12).setOrigin(0);
+    });
+  }
+
   // ---------------------------------------------------------------- pestaña: banco
 
   private tabBank(c: Campaign, a: Area, s: number): void {
@@ -475,7 +570,7 @@ export class CampaignScene extends Phaser.Scene {
     const x0 = W / 2 - boxW / 2;
     const fs = clamp(15 * s, 12, 18);
     const lineH = fs * 1.55;
-    const result = r.sales + r.tips + r.penalties - r.purchases - r.rent - r.interest;
+    const result = dayResult(r);
     const lines: [string, number | string, string?][] = [
       ['Clientes servidos', `${r.served} (${r.perfect} perfectos)`],
       ['Clientes perdidos', r.lost],
@@ -483,7 +578,9 @@ export class CampaignScene extends Phaser.Scene {
       ['Propinas', r.tips, 'plus'],
       ['Multas y desperdicio', r.penalties, 'minus'],
       ['Compras de la mañana', -r.purchases, 'minus'],
+      ...(r.deliveries ? ([['Repartos a domicilio', `+${r.deliveryIncome} (${r.deliveries})`, 'plus']] as [string, string, string][]) : []),
       ['Alquiler', -r.rent, 'minus'],
+      ...(r.wages ? ([['Sueldos', -r.wages, 'minus']] as [string, number, string][]) : []),
       ['Intereses', -r.interest, 'minus'],
       ['Resultado del día', result, result >= 0 ? 'plus' : 'minus'],
     ];
@@ -545,6 +642,11 @@ interface Area {
   y: number;
   w: number;
   h: number;
+}
+
+/** Resultado neto del día (lo que ganó o perdió el restaurante). */
+function dayResult(r: DayReport): number {
+  return r.sales + r.tips + r.penalties + (r.deliveryIncome ?? 0) - r.purchases - r.rent - r.interest - (r.wages ?? 0);
 }
 
 /** Ingredientes de la despensa que lleva una receta. */

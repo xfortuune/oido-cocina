@@ -13,3 +13,5 @@ export * from './weather';
 export * from './achievements';
 export * from './barrio';
 export * from './reviews';
+export * from './analysis';
+export * from './season';

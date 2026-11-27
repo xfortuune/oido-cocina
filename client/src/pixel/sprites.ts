@@ -1,7 +1,7 @@
 // Pixel art de ¡Oído, Cocina!, generado en tiempo de carga a partir de mapas de caracteres.
 // Así no hace falta cargar imágenes (y en Discord no hay que mapear más URLs).
 import Phaser from 'phaser';
-import { HATS, type ChefLook, type Flavor, type HatId, type Ingredient, type Item, type Tile } from '@hora-punta/shared';
+import { BEARDS, HAIR_COLORS, PATTERNS, type ChefLook, type Flavor, type HatId, type Ingredient, type Item, type Tile } from '@hora-punta/shared';
 
 export const TILE = 16;
 
@@ -82,6 +82,11 @@ const HEADWEAR: Record<HatId, { down: string[]; up: string[]; side: string[] }> 
   const topHat = ['.....kkkkkk.....', '.....knnnnk.....', '.....knnnnk.....', '.....krrrrk.....', '...kknnnnnnkk...', '....kkkkkkkk....'];
   const viking = ['..w..........w..', '..ww.kkkkkk.ww..', '...wkggggggkw...', '...kggggggggk...', '...kgYgggYggk...', '....kkkkkkkk....'];
   const golden = ['................', '.....kkkkkk.....', '....kyyyyyyk....', '...kyyyyyyyyk...', '...kyyyyyyyYk...', '....kYYYYYYk....'];
+  const laurel = ['................', '................', '................', '....l.l..l.l....', '...lLlLllLlLl...', '...L.kkkkkk.L...'];
+  const flowers = ['................', '................', '................', '....f.y..f.y....', '...fyfffyfffy...', '....kkkkkkkk....'];
+  const sunHat = ['................', '.....kkkkkk.....', '....kbbbbbbk....', '....krrrrrrk....', '.kkbbbbbbbbbbkk.', '..kkkkkkkkkkkk..'];
+  const pumpkin = ['.......L........', '......LL........', '....kkkkkkkk....', '...koOooOooOk...', '...koOooOooOk...', '....kkkkkkkk....'];
+  const wool = ['.......ww.......', '.......ww.......', '.....kkkkkk.....', '....kcCcCcCk....', '...kcCcCcCcCk...', '...kwwwwwwwwk...'];
   const same = (rows: string[]) => ({ down: rows, up: rows, side: rows });
   return {
     gorro: same(CHEF_HAT),
@@ -93,12 +98,27 @@ const HEADWEAR: Record<HatId, { down: string[]; up: string[]; side: string[] }> 
     copa: same(topHat),
     vikingo: same(viking),
     dorado: same(golden),
+    laurel: same(laurel),
+    flores: same(flowers),
+    pamela: same(sunHat),
+    calabaza: same(pumpkin),
+    lana: same(wool),
   };
 })();
 
 /** Cambios en la cara (filas 6-9 de la cara) para bigote y gafas. */
-function face(rows: string[], hat: HatId, dir: 'down' | 'up' | 'side'): string[] {
+function face(rows: string[], hat: HatId, dir: 'down' | 'up' | 'side', beard = 'nada'): string[] {
   const out = [...rows];
+  if (beard === 'barba' && dir === 'down') {
+    out[8] = '....khhmmhhk....';
+    out[9] = '.....khhhhk.....';
+  }
+  if (beard === 'barba' && dir === 'side') {
+    out[8] = '....khsssshhhk..';
+    out[9] = '.....khhhhk.....';
+  }
+  if (beard === 'perilla' && dir === 'down') out[9] = '.....kshhsk.....';
+  if (beard === 'perilla' && dir === 'side') out[9] = '.....ksshhk.....';
   if (hat === 'bigote' && dir === 'down') out[8] = '....kshhhhsk....';
   if (hat === 'bigote' && dir === 'side') out[8] = '....khssshhhk...';
   if (hat === 'gafas' && dir === 'down') out[7] = '....kkwkkwkk....';
@@ -239,10 +259,86 @@ function rect(c: CanvasRenderingContext2D, color: string, x: number, y: number, 
   c.fillRect(x, y, w, h);
 }
 
-/** Textura de un cocinero: con un número, el delantal de ese color y el gorro de chef. */
+const SKIN_COLORS: [string, string][] = [
+  ['#f2c09a', '#d99a74'],
+  ['#e0a878', '#c0845a'],
+  ['#c98e62', '#a86e46'],
+  ['#8d5a3b', '#6b4029'],
+];
+const HAIR_HEX: Record<string, string> = {
+  castano: '#5a3a22',
+  negro: '#3a2a22',
+  rubio: '#e0b04a',
+  pelirrojo: '#b5482c',
+  gris: '#8a8a96',
+  rosa: '#f28ac0',
+  azul: '#4fa3e0',
+  naranja: '#ff8a3d',
+  blanco: '#e8e8ee',
+};
+
+/** Escena con la que se pintan los cocineros bajo demanda (hay demasiadas combinaciones para hacerlas todas). */
+let painter: Phaser.Scene | null = null;
+
+/**
+ * Textura de un cocinero (con un número, el delantal de ese color y el gorro de chef). Se pinta la primera vez
+ * que hace falta: delantal, estampado, accesorio, piel, pelo y barba.
+ */
 export function chefKey(look: ChefLook | number | undefined, dir: 'down' | 'up' | 'side', frame: number): string {
-  const l = typeof look === 'number' ? { apron: look, hat: 'gorro' } : (look ?? { apron: 0, hat: 'gorro' });
-  return `chef_${l.apron % CHEF_COLORS.length}_${l.hat}_${dir}_${frame}`;
+  const l: ChefLook = typeof look === 'number' ? { apron: look, hat: 'gorro' } : (look ?? { apron: 0, hat: 'gorro' });
+  const apron = l.apron % CHEF_COLORS.length;
+  const hat = HEADWEAR[l.hat] ? l.hat : 'gorro';
+  const skin = (l.skin ?? 0) % SKIN_COLORS.length;
+  const hair = (l.hair ?? 0) % HAIR_COLORS.length;
+  const beard = BEARDS.some((b) => b.id === l.beard) ? l.beard! : 'nada';
+  const pattern = PATTERNS.some((p) => p.id === l.pattern) ? l.pattern! : 'liso';
+  const key = `chef_${apron}_${hat}_${skin}_${hair}_${beard}_${pattern}_${dir}_${frame}`;
+  if (painter && !painter.textures.exists(key)) paintChef(painter, key, { apron, hat, skin, hair, beard, pattern }, dir, frame);
+  return key;
+}
+
+function paintChef(scene: Phaser.Scene, key: string, l: Required<ChefLook>, dir: 'down' | 'up' | 'side', frame: number): void {
+  const gold = l.pattern === 'dorado';
+  const [a, A] = gold ? ['#ffd23f', '#e0a800'] : CHEF_COLORS[l.apron];
+  const [sk, SK] = SKIN_COLORS[l.skin];
+  const pal = {
+    ...BASE,
+    s: sk,
+    S: SK,
+    h: HAIR_HEX[HAIR_COLORS[l.hair].id] ?? '#5a3a22',
+    a,
+    A,
+    r: '#e5483a',
+    y: '#ffd23f',
+    Y: '#e0a800',
+    n: '#33333d',
+    l: '#5cc46a',
+    L: '#37913f',
+    f: '#ff6b9d',
+    b: '#e8c77a',
+    o: '#ff8a3d',
+    O: '#d9651c',
+    c: '#4fa3e0',
+    C: '#2f74b0',
+  };
+  const head = HEADWEAR[l.hat];
+  const body = dir === 'down' ? CHEF_DOWN : dir === 'up' ? CHEF_UP : CHEF_SIDE;
+  const legs = dir === 'side' ? LEGS_SIDE[frame] : LEGS_FRONT[frame];
+  const rows = face([...head[dir], ...body.slice(CHEF_HAT.length)], l.hat, dir, l.beard);
+  // Estampado del delantal (de la fila 10 en adelante: el cuerpo).
+  for (let i = 10; i < rows.length; i++) {
+    rows[i] = [...rows[i]]
+      .map((ch, x) => {
+        if (ch !== 'a') return ch;
+        if (l.pattern === 'rayas' && i % 2 === 0) return 'A';
+        if (l.pattern === 'cuadros' && (x + i) % 2 === 0) return 'A';
+        if (l.pattern === 'lunares' && (x + 2 * i) % 4 === 0) return 'w';
+        if (gold && (x + i) % 5 === 0) return 'w';
+        return ch;
+      })
+      .join('');
+  }
+  paint(scene, key, [...rows, ...legs], pal);
 }
 
 export function customerKey(look: number): string {
@@ -277,21 +373,9 @@ export function drinkKey(flavor: Flavor): string {
 }
 
 export function generateTextures(scene: Phaser.Scene): void {
-  // Cocineros: 8 delantales x 6 accesorios x 3 direcciones x 2 pasos.
-  CHEF_COLORS.forEach(([a, A], apron) => {
-    const pal = { ...BASE, h: '#5a3a22', a, A, r: '#e5483a', y: '#ffd23f', Y: '#e0a800', n: '#33333d' };
-    for (const { id: hat } of HATS) {
-      const head = HEADWEAR[hat];
-      const look = { apron, hat };
-      for (const frame of [0, 1]) {
-        const body = (dir: 'down' | 'up' | 'side', rows: string[], legs: string[]) =>
-          paint(scene, chefKey(look, dir, frame), face([...head[dir], ...rows.slice(CHEF_HAT.length), ...legs], hat, dir), pal);
-        body('down', CHEF_DOWN, LEGS_FRONT[frame]);
-        body('up', CHEF_UP, LEGS_FRONT[frame]);
-        body('side', CHEF_SIDE, LEGS_SIDE[frame]);
-      }
-    }
-  });
+  // Cocineros: se pintan bajo demanda (chefKey); aquí, solo los de los cuatro colores de jugador.
+  painter = scene;
+  for (let apron = 0; apron < 4; apron++) for (const dir of ['down', 'up', 'side'] as const) for (const frame of [0, 1]) chefKey(apron, dir, frame);
 
   // Clientes: combinaciones de pelo, camiseta y piel.
   for (let look = 0; look < CUSTOMER_LOOKS * SKINS.length; look++) {

@@ -488,6 +488,31 @@ rachas, rondas impecables, el crítico, concursos, festivos o abrir con nieve. S
 arriba; en la sala se ve cuántos logros tiene cada uno, y desde el menú, «Perfil y logros» enseña el tuyo con el
 progreso de los que faltan. Están en `shared/src/achievements.ts`.
 
+### Tu cocinero
+
+En «Tu cocinero» hay tres pestañas: **Delantal** (8 colores y estampado: liso, rayas, cuadros, lunares o dorado),
+**Cara y pelo** (4 tonos de piel, 9 colores de pelo y barba o perilla) y **Accesorio** (15 gorros). Unas cosas se
+ganan con el récord del Desafío, otras en la tienda, otras con logros (rayas con «Cien bocados», cuadros con «Cocina
+impecable», lunares con «Una semana abiertos», la corona de laurel con «Duelo de cocinas») y otras con el pase de
+temporada. Los cocineros se pintan al momento (`chefKey` en `client/src/pixel/sprites.ts`), así que hay cientos de
+combinaciones sin cargar nada.
+
+### Pase de temporada
+
+Cada estación del año (la de verdad: otoño de septiembre a noviembre, etc.) trae su tema y un pase de 10 niveles que
+se sube jugando en cualquier modo (10 de experiencia por ronda, 2 por pedido servido y 1 por perfecto; 100 por nivel).
+En el nivel 2 sale un color de pelo, en el 5 un gorro de la estación (corona de flores, pamela, gorro de calabaza o de
+lana) y en el 10 el delantal dorado. La cocina se decora según la estación: hojas en otoño, luces en invierno, pétalos
+en primavera y farolillos en verano (en la campaña, según su propia estación). Se ve en «Perfil y logros → Temporada».
+Está en `shared/src/season.ts`.
+
+### Análisis de la ronda
+
+Al acabar una ronda, «Análisis de la ronda» enseña el ritmo (servidos y perdidos cada 10 s), cuánto tiempo estuvieron
+paradas la plancha y la freidora con pedidos esperando (y los clientes sin atender en la caja), consejos («el peor
+momento fue entre 1:00 y 1:30…») y lo que hizo cada cocinero. En la campaña, el cierre del día trae un consejo.
+Está en `shared/src/analysis.ts`.
+
 ### Mando
 
 Se puede jugar con mando (Xbox, PlayStation o cualquiera con el mapeo estándar del navegador):

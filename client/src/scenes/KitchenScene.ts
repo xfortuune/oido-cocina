@@ -22,6 +22,8 @@ import {
   holidayOf,
   weatherOf,
   weatherDay,
+  seasonOf,
+  realSeason,
 } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { computeLayout, isTouchDevice } from '../layout';
@@ -125,6 +127,7 @@ export class KitchenScene extends Phaser.Scene {
     this.addHelpers();
     this.addDecor();
     this.addWeather();
+    this.addSeasonDecor();
     this.overlay = this.add.graphics().setDepth(500);
     this.syncPlayers(0, 0);
     this.layoutCamera();
@@ -356,6 +359,51 @@ export class KitchenScene extends Phaser.Scene {
       const pase = k.tiles.flat().find((t) => t.kind === 'pase');
       if (pase) at('deco_tarro', pase.x * TILE + 3, pase.y * TILE + 6, 12 + pase.y * TILE);
     }
+  }
+
+  /**
+   * Tema de la temporada (pase de temporada): hojas en otoño, luces en invierno, pétalos en primavera y farolillos en
+   * verano. En la campaña manda su propia estación; en el resto, la de verdad.
+   */
+  private addSeasonDecor(): void {
+    const c = net.info?.juego === 'campana' ? net.info.campana : null;
+    const season = c ? seasonOf(weatherDay(c)) : realSeason();
+    const W = this.sim.kitchen.width * TILE;
+    const facade = 3 * TILE;
+    if (season === 'invierno' || season === 'verano') {
+      // Guirnalda en la fachada: bombillas que parpadean (invierno) o farolillos de papel (verano).
+      const colors = season === 'invierno' ? [0xe5483a, 0xffd23f, 0x5cc46a, 0x4fa3e0] : [0xff8a3d, 0xff6b9d, 0xffd23f, 0x3cc8b4];
+      const g = this.add.graphics().setDepth(31);
+      g.lineStyle(1, 0x2b1d14, 0.8);
+      g.beginPath();
+      for (let x = 0; x <= W; x += 4) g.lineTo(x, facade + 1 + Math.sin((x / TILE) * Math.PI) * 2);
+      g.strokePath();
+      for (let x = 6, n = 0; x < W; x += 12, n++) {
+        const yy = facade + 3 + Math.sin((x / TILE) * Math.PI) * 2;
+        const bulb = season === 'invierno' ? this.add.rectangle(x, yy, 3, 4, colors[n % 4]) : this.add.rectangle(x, yy + 1, 5, 6, colors[n % 4]).setStrokeStyle(1, 0x2b1d14);
+        bulb.setDepth(32);
+        if (season === 'invierno') this.tweens.add({ targets: bulb, alpha: 0.3, duration: 500 + (n % 3) * 170, yoyo: true, repeat: -1 });
+      }
+      return;
+    }
+    // Hojas (otoño) o pétalos (primavera) cayendo por la calle.
+    const colors = season === 'otono' ? [0xd9651c, 0xb5482c, 0xe0a800] : [0xff9ec8, 0xffffff, 0xf28ac0];
+    this.time.addEvent({
+      delay: 650,
+      loop: true,
+      callback: () => {
+        const x = Math.random() * W;
+        const leaf = this.add.rectangle(x, -2, 3, 2, colors[Math.floor(Math.random() * colors.length)]).setDepth(458);
+        this.tweens.add({
+          targets: leaf,
+          y: facade - 2,
+          x: x + (Math.random() - 0.3) * 30,
+          angle: 360,
+          duration: 2600 + Math.random() * 1200,
+          onComplete: () => this.tweens.add({ targets: leaf, alpha: 0, duration: 400, onComplete: () => leaf.destroy() }),
+        });
+      },
+    });
   }
 
   /** Campaña: el tiempo del día se ve en la calle (lluvia, nieve) y en festivo hay banderines. */

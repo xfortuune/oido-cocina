@@ -1088,6 +1088,10 @@ export class CampaignScene extends Phaser.Scene {
       y += ph + 10 * s;
     }
 
+    if (r.advice) {
+      const t = txt(this, W / 2, y, `Consejo: ${r.advice}`, fs * 0.8, { color: '#ffc93c', align: 'center', wordWrap: { width: boxW - 10 } }).setOrigin(0.5, 0);
+      y += t.height + 8 * s;
+    }
     // Reseñas de los clientes (las que quepan)
     if (r.reviews?.length) {
       const room = H - 90 * s - y;

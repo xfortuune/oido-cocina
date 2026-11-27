@@ -11,6 +11,8 @@ import {
   type SummaryInfo,
   type VersusSummary,
   TEAMS,
+  insights,
+  TIMELINE_STEP,
 } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { net, savedRecord } from '../net';
@@ -24,11 +26,15 @@ import { Button } from '../ui/Button';
  * o, si se ha acabado la partida, el resumen de la partida entera con el ranking del grupo.
  */
 export class SummaryScene extends Phaser.Scene {
+  /** Viendo el análisis de la ronda en vez del resumen. */
+  private analysis = false;
+
   constructor() {
     super('summary');
   }
 
   create(): void {
+    this.analysis = false;
     const onRoom = (info: RoomInfo) => {
       if (info.phase === 'lobby') this.scene.start('lobby');
       else if (info.phase === 'perks') this.scene.start('perks');
@@ -63,9 +69,118 @@ export class SummaryScene extends Phaser.Scene {
     drawBackground(this);
     const summary = net.summary;
     if (!summary) return;
-    if (summary.versus) this.buildVersus(summary, summary.versus);
+    if (this.analysis) this.buildAnalysis(summary);
+    else if (summary.versus) this.buildVersus(summary, summary.versus);
     else if (summary.run) this.buildRun(summary, summary.run);
     else this.buildRound(summary);
+  }
+
+  // ---------------------------------------------------------------- análisis
+
+  /** Ritmo de la ronda (servidos y perdidos cada 10 s), puestos parados, consejos y lo que hizo cada uno. */
+  private buildAnalysis(summary: SummaryInfo): void {
+    const { width: W, height: H } = this.scale;
+    const s = clamp(Math.min(W / 480, H / 760), 0.7, 1.3);
+    const st = summary.stats;
+    const boxW = Math.min(W - 20, 560);
+    const x0 = W / 2 - boxW / 2;
+    const fs = clamp(14 * s, 12, 17);
+    let y = 18 * s;
+    txt(this, x0, y, 'Análisis de la ronda', 26 * s, { color: '#4fa3e0', stroke: '#2b1d14', strokeThickness: 6 }).setOrigin(0, 0);
+    y += 44 * s;
+
+    // Ritmo: barras verdes (servidos) y rojas (perdidos) por tramo de 10 s.
+    const tl = st.timeline ?? { served: [], lost: [] };
+    const n = Math.max(tl.served.length, tl.lost.length, 1);
+    const chartH = 90 * s;
+    const g = this.add.graphics();
+    pixelPanel(g, x0, y, boxW, chartH + 44 * s);
+    txt(this, x0 + 12, y + 8, 'Ritmo: servidos (verde) y perdidos (rojo) cada 10 s', fs * 0.8).setAlpha(0.75);
+    const max = Math.max(1, ...tl.served, ...tl.lost);
+    const cx = x0 + 14;
+    const cw = boxW - 28;
+    const base = y + 22 * s + chartH;
+    const bw = cw / n;
+    for (let i = 0; i < n; i++) {
+      const sv = tl.served[i] ?? 0;
+      const ls = tl.lost[i] ?? 0;
+      const hs = Math.round(((chartH - 8) * sv) / max);
+      const hl = Math.round(((chartH - 8) * ls) / max);
+      g.fillStyle(0x43b049).fillRect(cx + i * bw + 1, base - hs, Math.max(2, bw / 2 - 1), hs);
+      g.fillStyle(0xe5483a).fillRect(cx + i * bw + bw / 2, base - hl, Math.max(2, bw / 2 - 1), hl);
+    }
+    g.fillStyle(0x2b1d14, 0.4).fillRect(cx, base, cw, 1);
+    txt(this, cx, base + 3, '0:00', fs * 0.7).setAlpha(0.6);
+    const end = n * TIMELINE_STEP;
+    txt(this, cx + cw, base + 3, `${Math.floor(end / 60)}:${String(end % 60).padStart(2, '0')}`, fs * 0.7).setOrigin(1, 0).setAlpha(0.6);
+    y += chartH + 52 * s;
+
+    // Puestos parados
+    const idle = st.idle ?? { grill: 0, fryer: 0, caja: 0 };
+    const rows: [string, number][] = [
+      ['Plancha parada', idle.grill],
+      ['Freidora parada', idle.fryer],
+      ...(idle.caja > 0 ? ([['Clientes sin atender', idle.caja]] as [string, number][]) : []),
+    ];
+    const total = Math.max(30, (n * TIMELINE_STEP) / 2);
+    const rh = fs * 1.7;
+    pixelPanel(g, x0, y, boxW, rows.length * rh + 16);
+    rows.forEach(([label, sec], i) => {
+      const ry = y + 8 + i * rh;
+      txt(this, x0 + 12, ry + 2, label, fs * 0.85);
+      const bx = x0 + boxW * 0.45;
+      const bwid = boxW * 0.42;
+      g.fillStyle(0x2b1d14, 0.15).fillRect(bx, ry + 5, bwid, fs * 0.7);
+      g.fillStyle(sec >= 12 ? 0xe5483a : 0x43b049).fillRect(bx, ry + 5, Math.min(bwid, (bwid * sec) / total), fs * 0.7);
+      txt(this, x0 + boxW - 12, ry + 2, `${Math.round(sec)} s`, fs * 0.85).setOrigin(1, 0);
+    });
+    y += rows.length * rh + 26;
+
+    // Consejos
+    for (const line of insights(st).slice(0, 4)) {
+      const t = txt(this, x0 + 4, y, `• ${line}`, fs * 0.9, { color: '#fff4dc', wordWrap: { width: boxW - 8 } });
+      y += t.height + 6;
+    }
+    y += 6;
+
+    // Lo que hizo cada uno
+    const players = [...summary.players].sort((a, b) => b.score - a.score);
+    const keys: [keyof SummaryInfo['players'][number]['stats'], string, number][] = [
+      ['taken', 'notas', 0x9b59b6],
+      ['delivered', 'entregas', 0x43b049],
+      ['cooked', 'fogones', 0xff8a3d],
+      ['assembled', 'capas', 0x4fa3e0],
+    ];
+    const most = Math.max(1, ...players.map((p) => keys.reduce((t, [k]) => t + (p.stats[k] as number), 0)));
+    const prh = 26 * s;
+    if (y + players.length * prh + 30 < H - 90 * s) {
+      pixelPanel(g, x0, y, boxW, players.length * prh + 30);
+      txt(this, x0 + 12, y + 6, keys.map(([, l]) => l).join(' · '), fs * 0.75).setAlpha(0.7);
+      players.forEach((p, i) => {
+        const ry = y + 24 + i * prh;
+        txt(this, x0 + 12, ry + prh / 2, p.name, fs * 0.9, { color: CHEF_COLORS[p.color][1] }).setOrigin(0, 0.5);
+        let bx = x0 + boxW * 0.35;
+        const full = boxW * 0.6;
+        for (const [k, , color] of keys) {
+          const w = (full * (p.stats[k] as number)) / most;
+          g.fillStyle(color).fillRect(bx, ry + 6, w, prh - 12);
+          bx += w;
+        }
+      });
+      y += players.length * prh + 40;
+    }
+    const by = Math.min(H - 44 * s, y + 30 * s);
+    new Button(this, W / 2, by, {
+      w: Math.min(boxW, 260),
+      h: 50 * s,
+      color: COLORS.orange,
+      label: 'Volver al resumen',
+      fontSize: 18 * s,
+      onPress: () => {
+        this.analysis = false;
+        this.build();
+      },
+    });
   }
 
   // ---------------------------------------------------------------- versus
@@ -340,7 +455,7 @@ export class SummaryScene extends Phaser.Scene {
 
   private buttons(y: number, s: number, boxW: number, label: string, note: string): void {
     const { width: W, height: H } = this.scale;
-    const by = Math.min(H - 44 * s, y + 34 * s);
+    const by = Math.min(H - 92 * s, y + 34 * s);
     const bw = Math.min((boxW - 12) / 2, 220);
     new Button(this, W / 2 - bw / 2 - 6, by, {
       w: bw,
@@ -361,7 +476,20 @@ export class SummaryScene extends Phaser.Scene {
         this.scene.start('menu');
       },
     });
-    if (net.info?.modo !== 1) txt(this, W / 2, by + 34 * s, note, 12 * s, { color: '#fff4dc99' }).setOrigin(0.5, 0);
+    // Debajo: el análisis de la ronda (ritmo, puestos parados y consejos).
+    const ay = Math.min(H - 14 * s - 18 * s, by + 52 * s);
+    new Button(this, W / 2, ay, {
+      w: Math.min(boxW, 240),
+      h: 36 * s,
+      color: COLORS.blue,
+      label: 'Análisis de la ronda',
+      fontSize: 15 * s,
+      onPress: () => {
+        this.analysis = true;
+        this.build();
+      },
+    });
+    if (net.info?.modo !== 1 && ay + 40 * s < H) txt(this, W / 2, ay + 22 * s, note, 12 * s, { color: '#fff4dc99' }).setOrigin(0.5, 0);
   }
 
   /** Confeti de colores cayendo desde arriba. */

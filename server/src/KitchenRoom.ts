@@ -654,7 +654,7 @@ export class KitchenRoom extends Room {
       if (only && !only(m)) continue;
       const key = this.profileKeys.get(m.id);
       if (!key) continue;
-      const { profile, fresh } = recordProfile(key, m.name, {
+      const { profile, fresh, rewards } = recordProfile(key, m.name, {
         served: st.served,
         perfect: st.perfect,
         money: sim.money,
@@ -671,7 +671,11 @@ export class KitchenRoom extends Room {
       m.logros = Object.keys(profile.achievements).length;
       const client = this.clients.find((c) => c.sessionId === m.id);
       client?.send('perfil', profile);
-      if (fresh.length) client?.send('logro', fresh.map((a) => ({ id: a.id, name: a.name, description: a.description })));
+      const news = [
+        ...fresh.map((a) => ({ id: a.id, name: a.name, description: a.description })),
+        ...rewards.map((r) => ({ id: r.unlock, name: `Pase · nivel ${r.level}`, description: `${r.name}: ya lo tienes en «Tu cocinero».` })),
+      ];
+      if (news.length) client?.send('logro', news);
     }
   }
 

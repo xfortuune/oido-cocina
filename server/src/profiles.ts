@@ -3,7 +3,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { newProfile, recordRound, reviveProfile, type Achievement, type Profile, type RoundRecord } from '@hora-punta/shared';
+import { addPassXp, newProfile, passXp, recordRound, reviveProfile, type Achievement, type PassReward, type Profile, type RoundRecord } from '@hora-punta/shared';
 
 const FILE =
   process.env.PROFILES_FILE ??
@@ -41,10 +41,12 @@ export function getProfile(key: string, name: string, avatar: string | null = nu
 }
 
 /** Apunta una ronda en el perfil, lo guarda y devuelve los logros nuevos. */
-export function recordProfile(key: string, name: string, r: RoundRecord): { profile: Profile; fresh: Achievement[] } {
+export function recordProfile(key: string, name: string, r: RoundRecord): { profile: Profile; fresh: Achievement[]; rewards: PassReward[] } {
   const profile = getProfile(key, name);
   const fresh = recordRound(profile, r);
+  // Pase de temporada: experiencia por jugar.
+  const rewards = addPassXp(profile, passXp(r.served, r.perfect));
   load()[key] = profile;
   save();
-  return { profile, fresh };
+  return { profile, fresh, rewards };
 }

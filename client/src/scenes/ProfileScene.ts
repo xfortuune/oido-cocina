@@ -1,12 +1,12 @@
 import Phaser from 'phaser';
-import { ACHIEVEMENTS, type Profile } from '@hora-punta/shared';
+import { ACHIEVEMENTS, PASS_LEVELS, PASS_XP_PER_LEVEL, passLevel, realSeason, SEASON_NAMES, SEASON_THEMES, seasonId, type Profile } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { net } from '../net';
 import { clamp, COLORS, drawBackground, pixelPanel, sceneAlive, txt } from '../theme';
 import { Button } from '../ui/Button';
 import { addSoundToggle } from '../ui/SoundToggle';
 
-type Tab = 'stats' | 'logros';
+type Tab = 'stats' | 'logros' | 'pase';
 
 /** Tu perfil: estadísticas de siempre y logros (los guarda el servidor por cuenta de Discord o por nombre). */
 export class ProfileScene extends Phaser.Scene {
@@ -62,10 +62,11 @@ export class ProfileScene extends Phaser.Scene {
     txt(this, W / 2, y, `${p.name} · ${got} de ${ACHIEVEMENTS.length} logros`, 17 * s, { color: '#fff4dc', stroke: '#2b1d14', strokeThickness: 4 }).setOrigin(0.5, 0);
     y += 28 * s;
 
-    const tw = (boxW - 8) / 2;
+    const tw = (boxW - 16) / 3;
     (
       [
         ['logros', 'Logros'],
+        ['pase', 'Temporada'],
         ['stats', 'Estadísticas'],
       ] as [Tab, string][]
     ).forEach(([id, label], i) => {
@@ -85,6 +86,7 @@ export class ProfileScene extends Phaser.Scene {
     y += 44 * s;
     const bottom = H - 70 * s;
     if (this.tab === 'stats') this.stats(p, x0, y, boxW, bottom - y, s);
+    else if (this.tab === 'pase') this.pass(p, x0, y, boxW, s);
     else this.achievements(p, x0, y, boxW, bottom - y, s);
     this.backButton(W, H, s);
   }
@@ -116,6 +118,44 @@ export class ProfileScene extends Phaser.Scene {
       const ry = y + 8 + i * rowH + rowH / 2;
       txt(this, x0 + 14, ry, label, fs).setOrigin(0, 0.5).setAlpha(0.75);
       txt(this, x0 + w - 14, ry, value, fs * 1.05).setOrigin(1, 0.5);
+    });
+  }
+
+  /** Pase de temporada: tema de la estación, nivel, barra de experiencia y recompensas. */
+  private pass(p: Profile, x0: number, y: number, w: number, s: number): void {
+    const season = realSeason();
+    const theme = SEASON_THEMES[season];
+    const xp = p.pass?.season === seasonId() ? p.pass.xp : 0;
+    const level = passLevel(xp);
+    const fs = clamp(15 * s, 12, 18);
+    const g = this.add.graphics();
+    const h1 = 120 * s;
+    pixelPanel(g, x0, y, w, h1, 0xfff0c8);
+    txt(this, x0 + 14, y + 10, `${SEASON_NAMES[season]}: ${theme.name}`, fs * 1.2);
+    txt(this, x0 + 14, y + 14 + fs * 1.4, theme.text, fs * 0.8, { color: '#6b5a4a', wordWrap: { width: w - 28 } });
+    const by = y + h1 - 40 * s;
+    txt(this, x0 + 14, by - fs * 1.3, level >= PASS_LEVELS ? `Nivel ${PASS_LEVELS}: ¡pase completo!` : `Nivel ${level} de ${PASS_LEVELS} · ${xp % PASS_XP_PER_LEVEL}/${PASS_XP_PER_LEVEL} para el siguiente`, fs * 0.85);
+    // Barra con las 10 casillas del pase
+    const cw = (w - 28) / PASS_LEVELS;
+    for (let i = 0; i < PASS_LEVELS; i++) {
+      const filled = i < level ? 1 : i === level ? (xp % PASS_XP_PER_LEVEL) / PASS_XP_PER_LEVEL : 0;
+      g.fillStyle(0x2b1d14, 0.2).fillRect(x0 + 14 + i * cw + 1, by, cw - 2, 16 * s);
+      if (filled > 0) g.fillStyle(0xff8a3d).fillRect(x0 + 14 + i * cw + 1, by, (cw - 2) * filled, 16 * s);
+      if (theme.rewards.some((r) => r.level === i + 1)) this.add.image(x0 + 14 + i * cw + cw / 2, by + 8 * s, 'icon_star').setScale(1.4);
+    }
+    y += h1 + 10 * s;
+    txt(this, x0, y, 'Recompensas (se ponen en «Tu cocinero»)', fs * 0.9, { color: '#fff4dc' });
+    y += fs * 1.6;
+    for (const r of theme.rewards) {
+      const got = p.unlocked?.includes(r.unlock) ?? false;
+      pixelPanel(g, x0, y, w, 40 * s, got ? 0xd9f2d0 : COLORS.panel, 2);
+      txt(this, x0 + 14, y + 20 * s, `Nivel ${r.level}: ${r.name}`, fs).setOrigin(0, 0.5);
+      txt(this, x0 + w - 14, y + 20 * s, got ? 'Conseguido' : level >= r.level ? 'Al jugar' : 'Bloqueado', fs * 0.8, { color: got ? '#2e8a34' : '#6b5a4a' }).setOrigin(1, 0.5);
+      y += 46 * s;
+    }
+    txt(this, x0, y + 4, 'Se gana experiencia jugando en cualquier modo: más por cada pedido servido y por los perfectos. Al cambiar de estación empieza un pase nuevo.', fs * 0.75, {
+      color: '#fff4dcaa',
+      wordWrap: { width: w },
     });
   }
 

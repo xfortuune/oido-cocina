@@ -1,5 +1,6 @@
 // Logros y perfil de cada cocinero. El servidor guarda el perfil por cuenta de Discord (o por nombre en el
 // navegador) y lo actualiza al acabar cada ronda o servicio; el cliente solo lo enseña.
+import { passLevel, realSeason, SEASON_THEMES, seasonId, type PassReward } from './season';
 
 /** Contadores de toda la vida del cocinero (cuentan lo que hizo el equipo en las rondas en que estuvo). */
 export interface ProfileStats {
@@ -32,6 +33,9 @@ export interface Profile {
   name: string;
   avatar: string | null;
   stats: ProfileStats;
+  /** Pase de temporada en curso (season.ts) y todo lo desbloqueado para el cocinero («hat:calabaza»…). */
+  pass: { season: string; xp: number };
+  unlocked: string[];
   /** Logro → fecha (ISO) en que se consiguió. */
   achievements: Record<string, string>;
   since: string;
@@ -94,6 +98,8 @@ export function newProfile(name: string, avatar: string | null = null): Profile 
       versusWins: 0,
     },
     achievements: {},
+    pass: { season: seasonId(), xp: 0 },
+    unlocked: [],
     since: new Date().toISOString(),
   };
 }
@@ -118,6 +124,18 @@ export interface RoundRecord {
   holiday?: boolean;
   snow?: boolean;
   versusWin?: boolean;
+}
+
+/** Suma experiencia al pase de temporada (si ha cambiado la estación, empieza de cero) y devuelve las recompensas nuevas. */
+export function addPassXp(p: Profile, xp: number, date = new Date()): PassReward[] {
+  const id = seasonId(date);
+  if (p.pass.season !== id) p.pass = { season: id, xp: 0 };
+  const before = passLevel(p.pass.xp);
+  p.pass.xp += xp;
+  const after = passLevel(p.pass.xp);
+  const fresh = SEASON_THEMES[realSeason(date)].rewards.filter((r) => r.level > before && r.level <= after && !p.unlocked.includes(r.unlock));
+  for (const r of fresh) p.unlocked.push(r.unlock);
+  return fresh;
 }
 
 /** Apunta la ronda y devuelve los logros recién conseguidos. */
@@ -160,5 +178,7 @@ export function reviveProfile(raw: unknown, name: string): Profile {
     ...p,
     stats: { ...base.stats, ...(p.stats ?? {}) },
     achievements: { ...(p.achievements ?? {}) },
+    pass: p.pass && typeof p.pass.xp === 'number' ? p.pass : base.pass,
+    unlocked: Array.isArray(p.unlocked) ? p.unlocked : [],
   };
 }

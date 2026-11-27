@@ -246,6 +246,8 @@ export interface DayReport {
   rivalRep?: number | null;
   /** Lo que dicen los clientes del día. */
   reviews?: Review[];
+  /** Un consejo a partir de cómo fue el servicio (analysis.ts). */
+  advice?: string;
 }
 
 export interface Campaign {

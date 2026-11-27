@@ -13,6 +13,7 @@ import {
 } from './campaign';
 import { makeDilemma } from './barrio';
 import { makeReviews } from './reviews';
+import { insights } from './analysis';
 import { holidayOf } from './weather';
 import { levelParams, MAX_LEVEL, type Estilo, type LevelParams } from './levels';
 import { getPerk, perkCount, PERKS } from './perks';
@@ -312,8 +313,9 @@ export function afterClose(c: Campaign, r: DayReport, e: DayExtras): void {
   r.repAfter = c.reputation;
   r.chapterDone = checkChapter(c);
   if (r.chapterDone) r.moneyAfter = c.money;
-  // Reseñas de los clientes (no en el concurso)
+  // Reseñas de los clientes y un consejo (no en el concurso)
   if (!e.contest) {
+    r.advice = insights(e.stats)[0];
     const items = menuOn(c);
     const priceRatio = items.reduce((n, m) => n + m.price / getRecipe(m.recipeId).price, 0) / Math.max(1, items.length);
     r.reviews = makeReviews({

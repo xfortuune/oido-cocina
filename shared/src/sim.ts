@@ -184,7 +184,14 @@ export interface TurnStats {
   bestStreak?: number;
   /** Críticos servidos perfectos. */
   critics?: number;
+  /** Ritmo de la ronda: servidos y perdidos en cada tramo de 10 segundos. */
+  timeline?: { served: number[]; lost: number[] };
+  /** Segundos con un puesto parado mientras había pedidos que lo necesitaban. */
+  idle?: { grill: number; fryer: number; caja: number };
 }
+
+/** Segundos de cada tramo del ritmo de la ronda. */
+export const TIMELINE_STEP = 10;
 
 export type SimEvent =
   | { type: 'newOrder'; orderId: number }
@@ -598,6 +605,7 @@ export class KitchenSim {
 
     this.updateTakeaway(dt);
     this.updateSpills(dt);
+    this.trackIdle(dt);
     // Con la cocina sucia los clientes se impacientan antes.
     const dirt = 1 + 0.12 * Object.keys(this.spills).length;
     for (const order of [...this.orders]) {
@@ -609,6 +617,7 @@ export class KitchenSim {
         this.money -= CONFIG.lostMoneyPenalty;
         this.reputation -= penalty;
         this.stats.lost++;
+        this.bump('lost');
         this.breakStreak();
         this.events.push({ type: 'lost', orderId: order.id, slot: order.slot, penalty });
       }
@@ -906,6 +915,7 @@ export class KitchenSim {
     this.money += earned + tip + bonus;
     this.reputation = Math.min(CONFIG.maxReputation, this.reputation + (perfect ? 2 : 1));
     this.stats.served++;
+    this.bump('served');
     const by = (this.stats.byRecipe ??= {});
     by[order.recipeId] = (by[order.recipeId] ?? 0) + 1;
     if (order.fries && order.drink) this.stats.combos = (this.stats.combos ?? 0) + 1;
@@ -1194,6 +1204,30 @@ export class KitchenSim {
     };
     this.orders.push(order);
     this.events.push({ type: 'newOrder', orderId: order.id });
+  }
+
+  // ---------------------------------------------------------------- análisis de la ronda
+
+  /** Suma uno al tramo de tiempo actual del ritmo de la ronda. */
+  private bump(what: 'served' | 'lost'): void {
+    const tl = (this.stats.timeline ??= { served: [], lost: [] });
+    const i = Math.floor(this.time / TIMELINE_STEP);
+    for (const arr of [tl.served, tl.lost]) while (arr.length <= i) arr.push(0);
+    tl[what][i]++;
+  }
+
+  /** Cuenta el tiempo que la plancha, la freidora o la caja están paradas con pedidos esperándolas. */
+  private trackIdle(dt: number): void {
+    const idle = (this.stats.idle ??= { grill: 0, fryer: 0, caja: 0 });
+    const pending = this.orders.filter((o) => o.taken);
+    const items = [...[...this.stations.values()].map((s) => s.item), ...[...this.players.values()].map((p) => p.holding)];
+    const burgers = pending.filter((o) => !o.done.burger).length;
+    const meat = items.filter((it) => it && (it.kind === 'raw' || (it.kind === 'food' && it.layers.includes('carne')))).length;
+    if (burgers > 0 && meat === 0) idle.grill += dt;
+    const fries = pending.filter((o) => o.fries && !o.done.fries).length;
+    const potatoes = items.filter((it) => it && (it.kind === 'potatoes' || it.kind === 'fries')).length;
+    if (fries > 0 && potatoes === 0) idle.fryer += dt;
+    if (this.needsCaja && this.players.size > 1 && this.orders.some((o) => !o.taken)) idle.caja += dt;
   }
 
   // ---------------------------------------------------------------- para llevar y manchas

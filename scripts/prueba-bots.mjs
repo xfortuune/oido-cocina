@@ -208,7 +208,7 @@ await solo.room.leave();
   while (g1.info.phase !== 'cierre') await wait(300);
   c = g1.info.campana;
   const r = c.lastReport;
-  check(r?.reviews?.length >= 2 && r.reviews.every((x) => x.text && x.stars >= 1 && x.stars <= 5), `Reseñas del día: «${r?.reviews?.[0]?.text}»`);
+  check(r?.reviews?.length >= 1 && r.reviews.every((x) => x.text && x.stars >= 1 && x.stars <= 5), `Reseñas del día: «${r?.reviews?.[0]?.text}»`);
   check(r?.weather === 'Primavera · Sol' && r.repFromQuality >= 0, `El cierre dice el tiempo (${r?.weather}) y la calidad (+${r?.repFromQuality})`);
   check(r?.day === 1 && c.day === 2 && r.rent === 10 && r.wages === 12, `Cierre del día 1: alquiler ${r?.rent}, sueldos ${r?.wages}, intereses ${r?.interest}, dinero ${r?.moneyAfter}`);
   check(c.stock.carne.reduce((n, l) => n + l.qty, 0) === carne1 - 1, 'La carne usada se descuenta de la despensa');

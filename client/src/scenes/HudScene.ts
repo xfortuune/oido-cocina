@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WEATHER, weatherOf, holidayOf, EMOTES, INCIDENTS, orderLayers, streakMult, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
+import { WEATHER, weatherOf, weatherDay, holidayOf, EMOTES, INCIDENTS, orderLayers, streakMult, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { addSoundToggle } from '../ui/SoundToggle';
 import { Button } from '../ui/Button';
@@ -125,7 +125,8 @@ export class HudScene extends Phaser.Scene {
     } else if (sim.day > 0) {
       // Campaña: no hay objetivo, el dinero es lo que cuenta.
       this.hud.served.setText(String(sim.stats.served)).setColor('#fff4dc');
-      this.levelText?.setText(`Día ${sim.day} · ${weekday(sim.day)} · ${sim.night ? 'Noche' : WEATHER[weatherOf(sim.day)].name}${holidayOf(sim.day) ? ' · ¡Festivo!' : ''}`);
+      const wd = weatherDay({ day: sim.day, city: net.info?.campana?.city ?? 'mandarina' });
+      this.levelText?.setText(`Día ${sim.day} · ${weekday(sim.day)} · ${sim.night ? 'Noche' : WEATHER[weatherOf(wd)].name}${holidayOf(wd) ? ' · ¡Festivo!' : ''}`);
     } else {
       const reached = sim.stats.served >= sim.goal;
       this.hud.served.setText(`${sim.stats.served}/${sim.goal}`).setColor(reached ? '#7ee081' : '#fff4dc');

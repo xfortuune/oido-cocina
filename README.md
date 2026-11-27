@@ -276,6 +276,35 @@ En la despensa cada ingrediente se puede comprar normal o **de calidad** (un 60 
 despensa sea de calidad al abrir, más propinas (hasta +60 %) y más reputación al cerrar (hasta +3). Compensa en días
 de mucha gente o festivos; con lluvia, quizá no.
 
+### Decisiones del barrio
+
+Algunas mañanas (más o menos un día de cada tres, desde el día 3 y nunca en domingo) pasa algo en el barrio y hay que
+elegir antes de abrir: el equipo de fútbol pide hamburguesas a mitad de precio, una influencer quiere comer gratis,
+el vecino se queja del humo, los estudiantes piden descuento, un músico quiere tocar en la puerta, obras en la calle,
+un lote de carne que caduca hoy, la fiesta del colegio, un gato en la puerta o un futbolista que quiere el local para él.
+Unas cosas se notan al momento (dinero, reputación, despensa) y otras solo en el servicio de hoy (más o menos gente,
+propinas, precios); algunas salen bien… o no. Están en `shared/src/barrio.ts`.
+
+### Reseñas
+
+Al cerrar cada día, dos o tres clientes dejan su reseña (con estrellas y autor: «Paqui, del 3.º B», «Lucía, 8 años»…)
+según cómo fue: colas, pedidos equivocados, cosas quemadas, rachas, precios, calidad, el tiempo o el turno de noche.
+Sirven de pista para mejorar. Están en `shared/src/reviews.ts`.
+
+### Franquicias (Nueva partida+)
+
+Con la campaña completada, en «Hoy» aparece **Abrir una franquicia**: se empieza de cero en otra ciudad con los
+cocineros formados, las recetas aprendidas y dinero de la casa madre, pero más difícil (la cocina va 2 niveles por
+delante en cada franquicia nueva):
+
+| Ciudad | Cómo es |
+|--------|---------|
+| Puerto del Sol | siempre primavera o verano: turistas, calor y mucha bebida; más gente, alquiler ×1,3 |
+| Villanieve | siempre otoño o invierno: frío, nieve y muchos repartos; algo menos de gente, alquiler más barato |
+| Gran Capital | muchísima gente (+35 %), clientes con menos paciencia y alquiler ×2,5 |
+
+Las ciudades completadas quedan en el salón de la fama.
+
 ## Cómo se juega
 
 ### Modos

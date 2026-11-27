@@ -6,6 +6,8 @@ import type { KitchenId } from './kitchen';
 import { levelParams, type Estilo, type LevelParams } from './levels';
 import { getRecipe, RECIPES } from './recipes';
 import { dayConditions, dayLabel, type DayConditions } from './weather';
+import type { DayMods, Dilemma } from './barrio';
+import type { Review } from './reviews';
 
 export type StockId = 'pan' | 'carne' | 'queso' | 'lechuga' | 'tomate' | 'bacon' | 'patatas' | 'refresco';
 
@@ -242,6 +244,8 @@ export interface DayReport {
   xp?: { name: string; gained: number; newPoints: number }[];
   /** Reputación de la cadena rival al cerrar (desde el capítulo 4). */
   rivalRep?: number | null;
+  /** Lo que dicen los clientes del día. */
+  reviews?: Review[];
 }
 
 export interface Campaign {
@@ -279,8 +283,15 @@ export interface Campaign {
   rival: { rep: number } | null;
   finished: boolean;
   lastReport: DayReport | null;
-  /** Lo que queda de partidas anteriores tras una bancarrota. */
-  fame: { quiebras: number; mejorDia: number };
+  /** Decisión del barrio de esta mañana (barrio.ts), lo que pasó al elegir y lo que cambia solo hoy. */
+  dilemma: Dilemma | null;
+  dilemmaResult: string | null;
+  mods: DayMods;
+  /** Franquicia: ciudad del restaurante y cuántos se han abierto (1 = el primero). */
+  city: CityId;
+  generation: number;
+  /** Lo que queda de partidas anteriores tras una bancarrota (y las franquicias completadas). */
+  fame: Fame;
   totals: { served: number; days: number };
 }
 
@@ -295,7 +306,58 @@ function weekdayFactor(day: number): number {
   return [0.85, 0.9, 0.95, 1, 1.15, 1.3, 1.1][(day - 1) % 7];
 }
 
-export function newCampaign(key: string, fame = { quiebras: 0, mejorDia: 0 }): Campaign {
+export interface Fame {
+  quiebras: number;
+  mejorDia: number;
+  /** Ciudades donde se completó la campaña. */
+  franquicias?: string[];
+}
+
+// ---------------------------------------------------------------- franquicias
+
+export type CityId = 'mandarina' | 'costa' | 'montana' | 'capital';
+
+export interface CityInfo {
+  name: string;
+  description: string;
+  /** Más o menos gente y alquiler respecto a la primera ciudad. */
+  demand: number;
+  rent: number;
+  /** Solo dos estaciones, en bucle: desde este día del calendario (1 primavera, 29 otoño). */
+  loopFrom?: number;
+}
+
+export const CITIES: Record<CityId, CityInfo> = {
+  mandarina: { name: 'Ciudad Mandarina', description: 'Donde empezó todo.', demand: 1, rent: 1 },
+  costa: { name: 'Puerto del Sol', description: 'En la costa: siempre primavera o verano, turistas y calor. Se vende mucha bebida.', demand: 1.1, rent: 1.3, loopFrom: 1 },
+  montana: { name: 'Villanieve', description: 'En la montaña: siempre otoño o invierno, frío y nieve. Muchos repartos.', demand: 0.95, rent: 0.8, loopFrom: 29 },
+  capital: { name: 'Gran Capital', description: 'Muchísima gente, un alquiler carísimo y clientes con menos paciencia.', demand: 1.35, rent: 2.5 },
+};
+
+/** Día del calendario del tiempo (cada ciudad tiene su clima). */
+export function weatherDay(c: Pick<Campaign, 'day' | 'city'>): number {
+  const from = CITIES[c.city ?? 'mandarina']?.loopFrom;
+  return from ? from + ((c.day - 1) % 28) : c.day;
+}
+
+/**
+ * Tras completar la campaña se puede abrir una franquicia en otra ciudad: se empieza de cero pero con los
+ * cocineros formados, las recetas aprendidas, algo de dinero de la casa madre y más dificultad.
+ */
+export function openFranchise(c: Campaign, city: string): Campaign | null {
+  if (!c.finished || !(city in CITIES) || city === 'mandarina') return null;
+  const fame: Fame = { ...c.fame, franquicias: [...(c.fame.franquicias ?? []), CITIES[c.city].name] };
+  const f = newCampaign(c.key, fame);
+  f.city = city as CityId;
+  f.generation = c.generation + 1;
+  f.chefs = c.chefs;
+  f.learnedRecipes = [...c.learnedRecipes];
+  for (const m of f.menu) if (f.learnedRecipes.includes(m.recipeId)) m.on = true;
+  f.money += 100 * (f.generation - 1);
+  return f;
+}
+
+export function newCampaign(key: string, fame: Fame = { quiebras: 0, mejorDia: 0 }): Campaign {
   const day = 1;
   const lot = (id: StockId, qty: number): Lot[] => [{ qty, expires: day + getStock(id)!.life - 1 }];
   return {
@@ -331,6 +393,11 @@ export function newCampaign(key: string, fame = { quiebras: 0, mejorDia: 0 }): C
     localHoy: 'barrio',
     rival: null,
     finished: false,
+    dilemma: null,
+    dilemmaResult: null,
+    mods: {},
+    city: 'mandarina',
+    generation: 1,
     sides: { ...SIDE_BASE },
     spentToday: 0,
     lastReport: null,
@@ -498,12 +565,14 @@ export function demandFactor(c: Campaign): number {
   const local = c.localHoy === 'puerto' ? PUERTO.demand : 1;
   // El tiempo, la estación y los festivos (weather.ts).
   const weather = conditions(c).demand;
-  return Math.max(0.3, Math.min(3, appeal * variety * rep * decor * local * weather * rivalFactor(c) * weekdayFactor(c.day)));
+  const city = CITIES[c.city]?.demand ?? 1;
+  const today = c.mods?.demand ?? 1;
+  return Math.max(0.3, Math.min(3, appeal * variety * rep * decor * local * weather * city * today * rivalFactor(c) * weekdayFactor(c.day)));
 }
 
 /** Tiempo y estación de hoy. */
 export function conditions(c: Campaign): DayConditions {
-  return dayConditions(c.day, c.upgrades.includes('terraza'));
+  return dayConditions(weatherDay(c), c.upgrades.includes('terraza'));
 }
 
 // ---------------------------------------------------------------- segundo local y rival
@@ -535,7 +604,7 @@ export function setLocal(c: Campaign, id: string): boolean {
 }
 
 export function rentPerDay(c: Campaign): number {
-  return CAMPAIGN.rent + (c.puertoOpen ? PUERTO.rent : 0);
+  return Math.round((CAMPAIGN.rent + (c.puertoOpen ? PUERTO.rent : 0)) * (CITIES[c.city]?.rent ?? 1));
 }
 
 /** Con el rival por encima en reputación, hasta un 30 % menos de clientes. */
@@ -551,7 +620,8 @@ export function campaignLevel(day: number): number {
 
 /** Parámetros del servicio de hoy: ritmo según la demanda, solo platos de la carta. */
 export function serviceParams(c: Campaign, players: number, estilo: Estilo): LevelParams {
-  const p = levelParams(campaignLevel(c.day) + (c.localHoy === 'puerto' ? 1 : 0), players, estilo);
+  // Cada franquicia nueva es más difícil (y en la capital la gente tiene menos paciencia).
+  const p = levelParams(campaignLevel(c.day) + (c.localHoy === 'puerto' ? 1 : 0) + 2 * ((c.generation ?? 1) - 1), players, estilo);
   const d = demandFactor(c);
   const recipes = menuOn(c).map((m) => m.recipeId);
   // Patatas y bebida caras se piden menos.
@@ -561,7 +631,7 @@ export function serviceParams(c: Campaign, players: number, estilo: Estilo): Lev
   const side = Math.min(0.85, Math.max(p.sideChance, 0.2) * sideAppeal);
   const params: LevelParams = {
     ...p,
-    patience: p.patience * (hasStaff(c, 'camarero') ? 1.1 : 1) * w.patience,
+    patience: p.patience * (hasStaff(c, 'camarero') ? 1.1 : 1) * w.patience * (c.city === 'capital' ? 0.9 : 1),
     duration: Math.max(120, p.duration),
     spawnStart: p.spawnStart / d,
     spawnEnd: p.spawnEnd / d,
@@ -590,8 +660,10 @@ export function expectedCustomers(p: LevelParams): number {
 
 /** Precios que cobra la cocina. */
 export function servicePrices(c: Campaign): { recipes: Record<string, number>; fries: number; drink: number } {
+  // Descuento de hoy (decisión del barrio), solo en las hamburguesas.
+  const f = c.mods?.price ?? 1;
   return {
-    recipes: Object.fromEntries(c.menu.map((m) => [m.recipeId, m.price])),
+    recipes: Object.fromEntries(c.menu.map((m) => [m.recipeId, Math.max(1, Math.round(m.price * f))])),
     fries: c.sides.fries,
     drink: c.sides.drink,
   };
@@ -632,7 +704,7 @@ export interface ServiceResult {
 
 /** Lo que multiplica las propinas hoy: festivo y despensa de calidad. */
 export function serviceTipMult(c: Campaign): number {
-  return conditions(c).tips * (1 + QUALITY.tips * qualityShare(c));
+  return conditions(c).tips * (1 + QUALITY.tips * qualityShare(c)) * (c.mods?.tips ?? 1);
 }
 
 /** Cierra el día: cobra el servicio, paga gastos, retira lo caducado y pasa al día siguiente. */
@@ -697,7 +769,7 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
     repAfter: c.reputation,
     repFromPrices,
     repFromQuality,
-    weather: dayLabel(c.day),
+    weather: dayLabel(weatherDay(c)),
     moneyAfter: c.money,
     debtAfter: c.debt,
     bankrupt,
@@ -707,6 +779,9 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
   c.totals.days++;
   c.fame.mejorDia = Math.max(c.fame.mejorDia, c.day);
   c.spentToday = 0;
+  c.mods = {};
+  c.dilemma = null;
+  c.dilemmaResult = null;
   c.day++;
   return report;
 }
@@ -763,5 +838,10 @@ export function reviveCampaign(raw: unknown, key: string): Campaign {
   out.localHoy = out.puertoOpen && out.localHoy === 'puerto' ? 'puerto' : 'barrio';
   out.rival ??= null;
   out.finished ??= false;
+  out.dilemma ??= null;
+  out.dilemmaResult ??= null;
+  out.mods ??= {};
+  out.city = out.city in CITIES ? out.city : 'mandarina';
+  out.generation ??= 1;
   return out;
 }

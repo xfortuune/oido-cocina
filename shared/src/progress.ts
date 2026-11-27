@@ -8,7 +8,12 @@ import {
   type ChefTraining,
   type DayReport,
   type Mission,
+  isNightShift,
+  weatherDay,
 } from './campaign';
+import { makeDilemma } from './barrio';
+import { makeReviews } from './reviews';
+import { holidayOf } from './weather';
 import { levelParams, MAX_LEVEL, type Estilo, type LevelParams } from './levels';
 import { getPerk, perkCount, PERKS } from './perks';
 import { getRecipe, RECIPES } from './recipes';
@@ -265,6 +270,8 @@ export interface DayExtras {
   contest: { served: number; goal: number } | null;
   /** Experiencia de cada cocinero presente: clave, nombre y puntos ganados. */
   xp: { key: string; name: string; gained: number }[];
+  /** Parte de la despensa de calidad al abrir (para las reseñas). */
+  quality?: number;
 }
 
 /** Tras cerrar el día: encargo, concurso, experiencia, capítulo y tablón de mañana. */
@@ -305,10 +312,26 @@ export function afterClose(c: Campaign, r: DayReport, e: DayExtras): void {
   r.repAfter = c.reputation;
   r.chapterDone = checkChapter(c);
   if (r.chapterDone) r.moneyAfter = c.money;
+  // Reseñas de los clientes (no en el concurso)
+  if (!e.contest) {
+    const items = menuOn(c);
+    const priceRatio = items.reduce((n, m) => n + m.price / getRecipe(m.recipeId).price, 0) / Math.max(1, items.length);
+    r.reviews = makeReviews({
+      day: r.day,
+      stats: e.stats,
+      priceRatio,
+      quality: e.quality ?? 0,
+      weather: r.weather ?? '',
+      night: isNightShift(r.day),
+      holiday: !!holidayOf(weatherDay({ day: r.day, city: c.city })),
+      chefs: e.xp.map((x) => x.name),
+    });
+  }
   // Mañana
   c.activeMission = null;
   c.contestToday = false;
   c.board = makeBoard(c);
+  c.dilemma = makeDilemma(c);
 }
 
 /** Al cambiar algo en la gestión (por ejemplo, devolver la deuda) puede completarse el capítulo. */

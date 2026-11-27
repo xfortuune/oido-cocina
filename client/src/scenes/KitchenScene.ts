@@ -21,6 +21,7 @@ import {
   type SimSnapshot,
   holidayOf,
   weatherOf,
+  weatherDay,
 } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { computeLayout, isTouchDevice } from '../layout';
@@ -361,10 +362,11 @@ export class KitchenScene extends Phaser.Scene {
   private addWeather(): void {
     const c = net.info?.juego === 'campana' ? net.info.campana : null;
     if (!c || c.contestToday) return;
-    const weather = weatherOf(c.day);
+    const wd = weatherDay(c);
+    const weather = weatherOf(wd);
     const W = this.sim.kitchen.width * TILE;
     const H = 3 * TILE;
-    if (holidayOf(c.day)) {
+    if (holidayOf(wd)) {
       const g = this.add.graphics().setDepth(455);
       const colors = [0xe5483a, 0xffd23f, 0x27ae60, 0x4fa3e0, 0xff6b9d];
       g.lineStyle(1, 0x2b1d14, 0.6).lineBetween(0, 3, W, 3);

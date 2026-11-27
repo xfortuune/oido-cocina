@@ -64,6 +64,9 @@ import {
   type SummaryInfo,
   holidayOf,
   weatherOf,
+  weatherDay,
+  decide,
+  openFranchise,
   type RoundRecord,
 } from '@hora-punta/shared';
 import { discordConfig, fetchUser, type DiscordUser } from './discord.ts';
@@ -413,6 +416,17 @@ export class KitchenRoom extends Room {
       this.broadcastRoom();
     };
     this.onMessage('c:buy', (_cl, id: string) => manage((c) => buyStock(c, String(id) as StockId)));
+    this.onMessage('c:decide', (_cl, n: number) => manage((c) => decide(c, Number(n))));
+    // Franquicia: con la campaña completada, se abre un restaurante nuevo en otra ciudad.
+    this.onMessage('c:franquicia', (_cl, city: string) => {
+      const c = this.campana;
+      if (!c || this.phase !== 'gestion') return;
+      const f = openFranchise(c, String(city));
+      if (!f) return;
+      this.campana = f;
+      saveCampaign(f);
+      this.broadcastRoom();
+    });
     this.onMessage('c:buyq', (_cl, id: string) => manage((c) => buyStock(c, String(id) as StockId, true)));
     this.onMessage('c:price', (_cl, m: { id: string; price: number }) => manage((c) => setPrice(c, String(m?.id), Number(m?.price))));
     this.onMessage('c:menu', (_cl, m: { id: string; on: boolean }) => manage((c) => setMenuOn(c, String(m?.id), !!m?.on)));
@@ -503,14 +517,14 @@ export class KitchenRoom extends Room {
       const st = sim.playerStats[m.id] ?? { taken: 0, delivered: 0, cooked: 0, assembled: 0, mistakes: 0 };
       return { key: this.memberKeys.get(m.id) ?? m.id, name: m.name, gained: Math.max(5, mvpScore(st)) };
     });
-    afterClose(c, report, { stats: sim.stats, contest: contest ? { served: sim.stats.served, goal: sim.goal } : null, xp });
+    afterClose(c, report, { stats: sim.stats, contest: contest ? { served: sim.stats.served, goal: sim.goal } : null, xp, quality: this.serviceQuality });
     const mvp = [...this.members.values()].sort((a, b) => mvpScore(sim.playerStats[b.id] ?? NO_STATS) - mvpScore(sim.playerStats[a.id] ?? NO_STATS))[0];
     this.recordProfiles(sim, mvp?.id ?? null, {
       money: contest ? 0 : sim.money,
       campaignDay: true,
       contestWon: !!report.contest?.won,
-      holiday: !contest && !!holidayOf(report.day),
-      snow: !contest && weatherOf(report.day) === 'nieve',
+      holiday: !contest && !!holidayOf(weatherDay({ day: report.day, city: c.city })),
+      snow: !contest && weatherOf(weatherDay({ day: report.day, city: c.city })) === 'nieve',
     });
     for (const m of this.members.values()) {
       const t = c.chefs[this.memberKeys.get(m.id) ?? m.id];
@@ -518,9 +532,12 @@ export class KitchenRoom extends Room {
     }
     if (report.bankrupt) {
       // Bancarrota: se empieza de nuevo, pero queda el salón de la fama y lo que han aprendido los cocineros.
-      const fresh = newCampaign(c.key, { quiebras: c.fame.quiebras + 1, mejorDia: c.fame.mejorDia });
+      const fresh = newCampaign(c.key, { ...c.fame, quiebras: c.fame.quiebras + 1 });
       fresh.lastReport = report;
       fresh.chefs = c.chefs;
+      // Una franquicia que quiebra sigue en su ciudad.
+      fresh.city = c.city;
+      fresh.generation = c.generation;
       this.campana = fresh;
     }
     saveCampaign(this.campana!);

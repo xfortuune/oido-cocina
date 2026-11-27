@@ -11,3 +11,5 @@ export * from './progress';
 export * from './incidents';
 export * from './weather';
 export * from './achievements';
+export * from './barrio';
+export * from './reviews';

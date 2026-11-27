@@ -42,6 +42,10 @@ import {
   STOCK,
   stockCount,
   weekday,
+  CITIES,
+  isNightShift,
+  weatherDay,
+  type CityId,
   conditions,
   dayLabel,
   holidayOf,
@@ -102,6 +106,8 @@ export class CampaignScene extends Phaser.Scene {
   /** Formación: habilidad seleccionada para ver su descripción. */
   private selectedPerk = TRAINABLE[0].id;
   private status = '';
+  /** Ventana de franquicias abierta. */
+  private franchiseOpen = false;
 
   constructor() {
     super('campaign');
@@ -213,6 +219,10 @@ export class CampaignScene extends Phaser.Scene {
 
   private buildMorning(info: RoomInfo, c: Campaign, W: number, H: number, s: number): void {
     let y = this.header(c, W, s, `Día ${c.day} · ${weekday(c.day)}`);
+    if (c.city !== 'mandarina') {
+      txt(this, W / 2, y - 6 * s, `${CITIES[c.city].name} · franquicia nº ${c.generation}`, 12 * s, { color: '#ffc93c' }).setOrigin(0.5, 0);
+      y += 14 * s;
+    }
     const boxW = Math.min(W - 16, 620);
     const x0 = W / 2 - boxW / 2;
 
@@ -274,6 +284,96 @@ export class CampaignScene extends Phaser.Scene {
       fontSize: 17 * s,
       onPress: () => net.toggleReady(),
     });
+
+    // Encima de todo: la decisión del barrio (hay que elegir antes de abrir) o las franquicias.
+    if (c.dilemma) this.dilemmaModal(c, W, H, s);
+    else if (this.franchiseOpen && c.finished) this.franchiseModal(c, W, H, s);
+  }
+
+  /** Fondo oscuro que tapa la pantalla y no deja tocar lo de debajo. */
+  private modalBack(W: number, H: number): void {
+    this.add.rectangle(0, 0, W, H, 0x000000, 0.6).setOrigin(0).setInteractive();
+  }
+
+  private dilemmaModal(c: Campaign, W: number, H: number, s: number): void {
+    const d = c.dilemma!;
+    this.modalBack(W, H);
+    const boxW = Math.min(W - 24, 460);
+    const x0 = W / 2 - boxW / 2;
+    const fs = clamp(16 * s, 13, 19);
+    const title = txt(this, W / 2, 0, d.title, fs * 1.3, { color: '#2b1d14', align: 'center', wordWrap: { width: boxW - 30 } }).setOrigin(0.5, 0);
+    const text = txt(this, W / 2, 0, d.text, fs, { color: '#4a3a2c', align: 'center', wordWrap: { width: boxW - 30 } }).setOrigin(0.5, 0);
+    const optH = 58 * s;
+    const h = 30 + title.height + 8 + text.height + 18 + 2 * (optH + 10) + 10;
+    const y0 = Math.max(10, H / 2 - h / 2);
+    const g = this.add.graphics();
+    pixelPanel(g, x0, y0, boxW, h, 0xfff0c8);
+    const label = txt(this, W / 2, y0 + 10, 'Esta mañana en el barrio…', fs * 0.75, { color: '#8a6d1a' }).setOrigin(0.5, 0);
+    title.setY(label.y + label.height + 2).setDepth(1);
+    text.setY(title.y + title.height + 8).setDepth(1);
+    let y = text.y + text.height + 18;
+    d.options.forEach((o, i) => {
+      new Button(this, W / 2, y + optH / 2, {
+        w: boxW - 30,
+        h: optH,
+        color: i === 0 ? COLORS.green : 0x8d6e63,
+        label: '',
+        onPress: () => net.campaign('c:decide', i),
+      });
+      txt(this, W / 2, y + optH * 0.34, o.label, fs * 1.05, { color: '#ffffff', stroke: '#2b1d14', strokeThickness: 4 }).setOrigin(0.5);
+      const hint = txt(this, W / 2, y + optH * 0.68, o.hint, fs * 0.72, { color: '#fff4dc' }).setOrigin(0.5);
+      if (hint.width > boxW - 50) hint.setScale((boxW - 50) / hint.width);
+      y += optH + 10;
+    });
+  }
+
+  private franchiseModal(c: Campaign, W: number, H: number, s: number): void {
+    this.modalBack(W, H);
+    const boxW = Math.min(W - 24, 520);
+    const x0 = W / 2 - boxW / 2;
+    const fs = clamp(15 * s, 12, 18);
+    const cities = (Object.keys(CITIES) as CityId[]).filter((id) => id !== 'mandarina');
+    const rowH = 92 * s;
+    const h = 90 * s + cities.length * (rowH + 8) + 60 * s;
+    const y0 = Math.max(8, H / 2 - h / 2);
+    const g = this.add.graphics();
+    pixelPanel(g, x0, y0, boxW, h, 0xfff0c8);
+    txt(this, W / 2, y0 + 10, 'Abrir una franquicia', fs * 1.4, { color: '#2b1d14' }).setOrigin(0.5, 0);
+    txt(this, W / 2, y0 + 12 + fs * 1.8, `Empezáis de cero en otra ciudad, con vuestros cocineros, las recetas aprendidas y ${100 * c.generation} monedas de la casa madre. Será más difícil.`, fs * 0.8, {
+      color: '#4a3a2c',
+      align: 'center',
+      wordWrap: { width: boxW - 30 },
+    }).setOrigin(0.5, 0);
+    let y = y0 + 90 * s;
+    for (const id of cities) {
+      const city = CITIES[id];
+      pixelPanel(g, x0 + 10, y, boxW - 20, rowH, COLORS.panel, 2);
+      txt(this, x0 + 22, y + 8, city.name, fs * 1.1);
+      txt(this, x0 + 22, y + 10 + fs * 1.4, city.description, fs * 0.75, { color: '#6b5a4a', wordWrap: { width: boxW - 170 * s } });
+      new Button(this, x0 + boxW - 20 - 62 * s, y + rowH / 2, {
+        w: 116 * s,
+        h: 40 * s,
+        color: COLORS.green,
+        label: 'Abrir aquí',
+        fontSize: fs,
+        onPress: () => {
+          this.franchiseOpen = false;
+          net.campaign('c:franquicia', id);
+        },
+      });
+      y += rowH + 8;
+    }
+    new Button(this, W / 2, y + 26 * s, {
+      w: Math.min(220, boxW - 40),
+      h: 42 * s,
+      color: 0x8d6e63,
+      label: 'Seguir aquí',
+      fontSize: fs,
+      onPress: () => {
+        this.franchiseOpen = false;
+        this.build();
+      },
+    });
   }
 
   // ---------------------------------------------------------------- pestaña: hoy
@@ -285,12 +385,31 @@ export class CampaignScene extends Phaser.Scene {
     const params = serviceParams(c, players, info.estilo);
     const expected = expectedCustomers(params);
     const burgers = burgersPossible(c);
+    // Lo que pasó con la decisión de esta mañana, y la franquicia al terminar la campaña.
+    if (c.dilemmaResult) {
+      const t = txt(this, a.x, y, `Esta mañana: ${c.dilemmaResult}`, fs * 0.85, { color: '#8a6d1a', wordWrap: { width: a.w } });
+      y += t.height + 6;
+    }
+    if (c.finished) {
+      new Button(this, a.x + a.w / 2, y + 17 * s, {
+        w: Math.min(a.w, 340),
+        h: 34 * s,
+        color: 0xd4a017,
+        label: '¡Campaña completada! Abrir una franquicia',
+        fontSize: 14 * s,
+        onPress: () => {
+          this.franchiseOpen = true;
+          this.build();
+        },
+      });
+      y += 42 * s;
+    }
     const w = conditions(c);
     const q = qualityShare(c);
     const lines: [string, string][] = [
-      ['Hoy', dayLabel(c.day)],
+      ['Hoy', `${dayLabel(weatherDay(c))}${isNightShift(c.day) ? ' · de noche' : ''}`],
       ['', w.holiday ? `¡Festivo! Más gente y propinas ×${w.tips}` : WEATHER[w.weather].hint],
-      ['Mañana', `${WEATHER[weatherOf(c.day + 1)].name}${holidayOf(c.day + 1) ? ` · ${holidayOf(c.day + 1)}` : ''}`],
+      ['Mañana', `${WEATHER[weatherOf(weatherDay({ ...c, day: c.day + 1 }))].name}${holidayOf(weatherDay({ ...c, day: c.day + 1 })) ? ` · ${holidayOf(weatherDay({ ...c, day: c.day + 1 }))}` : ''}`],
       ['Clientes previstos', `unos ${expected}`],
       ...(q > 0 ? ([['Despensa de calidad', `${Math.round(q * 100)} % · propinas +${Math.round(QUALITY.tips * q * 100)} %`]] as [string, string][]) : []),
       ['Hamburguesas que da la despensa', `${burgers}`],
@@ -967,6 +1086,29 @@ export class CampaignScene extends Phaser.Scene {
         if (value) txt(this, x0 + boxW - 14, y + 9 + i * lineH, value, fs * 0.9, { color: good ? '#2e8a34' : '#c0392b' }).setOrigin(1, 0);
       });
       y += ph + 10 * s;
+    }
+
+    // Reseñas de los clientes (las que quepan)
+    if (r.reviews?.length) {
+      const room = H - 90 * s - y;
+      const one = fs * 2.9 + 8;
+      const n = Math.min(r.reviews.length, Math.floor((room - fs * 1.4 - 18) / one));
+      if (n > 0) {
+        const rh = fs * 1.4 + n * one + 14;
+        pixelPanel(g, x0, y, boxW, rh, 0xf3ead8);
+        txt(this, x0 + 14, y + 8, 'Lo que dicen los clientes', fs * 0.85, { color: '#8a6d1a' });
+        r.reviews.slice(0, n).forEach((rv, i) => {
+          const ry = y + 8 + fs * 1.4 + i * one;
+          for (let k = 0; k < 5; k++) {
+            this.add.image(x0 + 20 + k * 13, ry + 6, 'icon_star').setScale(1.5).setAlpha(k < rv.stars ? 1 : 0.2);
+          }
+          const au = txt(this, x0 + 90, ry, rv.author, fs * 0.72, { color: '#6b5a4a' });
+          if (au.width > boxW - 100) au.setScale((boxW - 100) / au.width);
+          const tt = txt(this, x0 + 14, ry + fs * 1.05, `«${rv.text}»`, fs * 0.82, { color: rv.stars <= 2 ? '#a5352a' : '#2b1d14' });
+          if (tt.width > boxW - 28) tt.setScale((boxW - 28) / tt.width);
+        });
+        y += rh + 10 * s;
+      }
     }
 
     // ¡El final de la campaña!

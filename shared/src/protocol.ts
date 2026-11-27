@@ -15,6 +15,8 @@
 //
 // Solo en la campaña (fase 'gestion'):
 //   'c:buy'    StockId: comprar un paquete de ingredientes
+//   'c:decide'  0 | 1: elegir en la decisión del barrio de esta mañana
+//   'c:franquicia' CityId: con la campaña completada, abrir una franquicia en otra ciudad
 //   'c:buyq'   StockId: comprar un paquete al proveedor de calidad (más caro; más propinas y reputación)
 //   'c:price'  { id, price }: precio de una receta o de 'fries' / 'drink'
 //   'c:menu'   { id, on }: quitar o poner una receta en la carta

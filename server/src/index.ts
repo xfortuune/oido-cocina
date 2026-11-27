@@ -63,6 +63,6 @@ server.define(ROOM_NAME, KitchenRoom).filterBy(['sala', 'juego']);
 
 await server.listen(port);
 const { clientId, clientSecret, requireDiscord } = discordConfig();
-console.log(`🍔 Servidor de ¡Oído, Cocina! escuchando en http://localhost:${port}`);
+console.log(`🍔 Servidor de ¡Oído, Cocina! v${GAME_VERSION} escuchando en http://localhost:${port}`);
 if (!clientId || !clientSecret) console.log('   (sin VITE_DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET: solo modo navegador)');
 if (requireDiscord) console.log('   REQUIRE_DISCORD=1: solo se puede entrar desde Discord');

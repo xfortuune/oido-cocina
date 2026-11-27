@@ -3,6 +3,7 @@ import { CUSTOMER_SLOTS_X, EMOTES, INCIDENTS, formatDuration, getPerk, getRecipe
 import { audio } from '../audio';
 import { addSoundToggle } from '../ui/SoundToggle';
 import { Button } from '../ui/Button';
+import { markTutorial, stepsFor, tutorialDone, type TutorialStep } from '../tutorial';
 import type { SoundSetting } from '../audio';
 import { computeLayout, isTouchDevice, type Rect, type ScreenLayout } from '../layout';
 import { fillStack, stackPixelHeight } from '../pixel/items';
@@ -36,6 +37,10 @@ export class HudScene extends Phaser.Scene {
   private levelText?: Phaser.GameObjects.Text;
   /** Evento aleatorio en marcha: nombre y segundos que le quedan, arriba en el centro de la cocina. */
   private incidentText?: Phaser.GameObjects.Text;
+  /** Tutorial: pasos que tocan, por cuál va, y su panel y flecha. */
+  private tutorial: { steps: TutorialStep[]; i: number } | null = null;
+  private tutorialChecked = false;
+  private tutorialUi?: { text: Phaser.GameObjects.Text; panel: Phaser.GameObjects.Graphics; arrow: Phaser.GameObjects.Graphics; skip: Button };
   /** Tus habilidades, debajo de tus puestos. */
   private perksText?: Phaser.GameObjects.Text;
   private perksKey = '';
@@ -64,6 +69,8 @@ export class HudScene extends Phaser.Scene {
   create(): void {
     this.kitchen = this.scene.get('kitchen') as KitchenScene;
     this.bannerShown = false;
+    this.tutorial = null;
+    this.tutorialChecked = false;
     this.shownPaused = net.paused;
     this.pauseMode = 'menu';
     this.build();
@@ -144,6 +151,7 @@ export class HudScene extends Phaser.Scene {
     this.syncTickets(sim.orders.filter((o) => o.taken));
     this.syncNameTags();
     this.syncEmotes();
+    this.updateTutorial();
     const inc = sim.incident;
     if (this.incidentText) {
       if (inc && !net.paused) {
@@ -183,6 +191,7 @@ export class HudScene extends Phaser.Scene {
 
   private build(): void {
     this.children.removeAll(true);
+    this.tutorialUi = undefined;
     this.tickets.clear();
     this.stick = undefined;
     this.stickPointer = null;
@@ -263,6 +272,7 @@ export class HudScene extends Phaser.Scene {
     else {
       this.hintText = txt(this, L.W / 2, L.H - 4, '', 14, { color: '#fff4dcaa' }).setOrigin(0.5, 1);
     }
+    if (this.tutorial) this.buildTutorial();
     if (net.paused) this.buildPause();
   }
 
@@ -332,7 +342,7 @@ export class HudScene extends Phaser.Scene {
 
     // Configuración: sonido, volumen y pantalla completa
     const fullscreen = this.scale.fullscreen.available;
-    const boxH = (fullscreen ? 400 : 330) * s;
+    const boxH = (fullscreen ? 400 : 330) * s + 62 * s;
     let y = H / 2 - boxH / 2;
     pixelPanel(g, W / 2 - boxW / 2, y, boxW, boxH);
     y += 16 * s;
@@ -383,6 +393,13 @@ export class HudScene extends Phaser.Scene {
       });
       y += 62 * s;
     }
+    btn(y, 'Repetir el tutorial', 0xd4a017, () => {
+      markTutorial(false);
+      this.startTutorial();
+      this.pauseMode = 'menu';
+      net.pause(false);
+    });
+    y += 62 * s;
     btn(y, 'Volver', COLORS.green, () => {
       this.pauseMode = 'menu';
       this.build();
@@ -402,6 +419,106 @@ export class HudScene extends Phaser.Scene {
       return txt(this, cx - 2, r.h / 2 - 2, '', fs, { color: '#fff4dc' }).setOrigin(0, 0.5);
     };
     this.hud = { time: mk(0, 'icon_clock'), money: mk(1, 'icon_coin'), rep: mk(2, 'icon_star'), served: mk(3, 'icon_burger') };
+  }
+
+  // ---------------------------------------------------------------- tutorial
+
+  private startTutorial(): void {
+    const me = this.kitchen.localPlayer;
+    if (!me) return;
+    const sim = this.kitchen.sim;
+    const steps = stepsFor(me.roles, sim.needsCaja && sim.players.size > 1);
+    if (!steps.length) return;
+    this.tutorial = { steps, i: 0 };
+    this.build();
+  }
+
+  /** La primera vez que se juega (salvo en un concurso), el tutorial empieza solo. */
+  private updateTutorial(): void {
+    const sim = this.kitchen.sim;
+    const me = this.kitchen.localPlayer;
+    if (!this.tutorialChecked && me && net.snapshot) {
+      this.tutorialChecked = true;
+      if (!tutorialDone() && !sim.contest) this.startTutorial();
+    }
+    const tut = this.tutorial;
+    if (!tut || !me || !this.tutorialUi) return;
+    let changed = false;
+    while (tut.i < tut.steps.length && tut.steps[tut.i].done(sim, me)) {
+      tut.i++;
+      changed = true;
+    }
+    if (tut.i >= tut.steps.length) {
+      this.finishTutorial(true);
+      return;
+    }
+    if (changed) {
+      audio.sfx('perk');
+      this.build();
+      return;
+    }
+    // La flecha rebota encima de la casilla de destino más cercana.
+    const step = tut.steps[tut.i];
+    const arrow = this.tutorialUi.arrow.clear();
+    if (step.target && !net.paused) {
+      let best: { x: number; y: number } | null = null;
+      let bestD = Infinity;
+      for (const row of sim.kitchen.tiles) {
+        for (const t of row) {
+          if (t.kind !== step.target.kind || (step.target.crate && t.crate !== step.target.crate)) continue;
+          const d = Math.hypot(t.x + 0.5 - me.x, t.y + 0.5 - me.y);
+          if (d < bestD) {
+            bestD = d;
+            best = { x: t.x, y: t.y };
+          }
+        }
+      }
+      if (best) {
+        const at = this.kitchen.worldToScreen(best.x + 0.5, best.y);
+        const bob = Math.sin(this.time.now / 160) * 5;
+        const y = at.y - 6 + bob;
+        arrow.fillStyle(0x2b1d14).fillTriangle(at.x - 13, y - 22, at.x + 13, y - 22, at.x, y + 2);
+        arrow.fillStyle(0xffc93c).fillTriangle(at.x - 9, y - 20, at.x + 9, y - 20, at.x, y - 3);
+      }
+    }
+  }
+
+  private finishTutorial(completed: boolean): void {
+    this.tutorial = null;
+    markTutorial(true);
+    this.build();
+    if (completed) {
+      audio.sfx('levelUp');
+      const L = this.L;
+      this.popup(L.kitchen.x + L.kitchen.w / 2, L.kitchen.y + L.kitchen.h * 0.45, '¡Ya sabes lo básico! A cocinar', '#7ee081');
+    }
+  }
+
+  private buildTutorial(): void {
+    const tut = this.tutorial!;
+    const L = this.L;
+    const step = tut.steps[Math.min(tut.i, tut.steps.length - 1)];
+    const w = Math.min(L.kitchen.w - 12, 520);
+    const x0 = L.kitchen.x + (L.kitchen.w - w) / 2;
+    const y0 = L.kitchen.y + 50;
+    const text = txt(this, x0 + 12, y0 + 10, `Tutorial · paso ${tut.i + 1} de ${tut.steps.length}\n${step.text}`, 14, {
+      wordWrap: { width: w - 110 },
+      lineSpacing: 3,
+    }).setDepth(41);
+    const h = Math.max(text.height + 20, 56);
+    const panel = this.add.graphics().setDepth(40);
+    pixelPanel(panel, x0, y0, w, h, 0xfff0c8, 2);
+    const skip = new Button(this, x0 + w - 50, y0 + h / 2, {
+      w: 84,
+      h: 34,
+      color: 0x8a7a6a,
+      label: 'Saltar',
+      fontSize: 13,
+      onPress: () => this.finishTutorial(false),
+    }).setDepth(41);
+    skip.setData('ui', true);
+    const arrow = this.add.graphics().setDepth(39);
+    this.tutorialUi = { text, panel, arrow, skip };
   }
 
   /** Cartel de un evento aleatorio (aviso o comienzo), en el centro de la cocina. */

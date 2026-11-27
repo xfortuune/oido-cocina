@@ -381,6 +381,13 @@ En los concursos no hay eventos.
 
 Están en `shared/src/incidents.ts` y la lógica en `sim.ts`.
 
+### Tutorial
+
+La primera vez que se juega (en la campaña o en el Desafío, nunca en un concurso) sale una guía paso a paso con una
+flecha que señala dónde ir: coger carne, plancha, pan, montaje, apilar, completar la receta, entregar, patatas y
+bebidas. Se adapta a tus puestos (la caja aprende a tomar nota y entregar; la plancha, la carne…) y cada paso avanza
+solo cuando lo haces. Se puede saltar, y repetir desde Pausa → Configuración. Está en `client/src/tutorial.ts`.
+
 ### Pausa
 
 Escape (o el botón de pausa) **para la ronda para todo el grupo**: el reloj, los clientes y los fogones se quedan

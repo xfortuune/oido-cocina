@@ -199,6 +199,8 @@ export interface SimSnapshot {
   map: KitchenId;
   /** Evento aleatorio en marcha. */
   incident: ActiveIncident | null;
+  /** Si la caja tiene que tomar nota (no en solitario, modo libre ni con camarero). */
+  needsCaja: boolean;
   stock: Record<string, number> | null;
   money: number;
   reputation: number;
@@ -563,6 +565,7 @@ export class KitchenSim {
       contest: this.contest,
       map: this.map,
       incident: this.incident,
+      needsCaja: this.needsCaja,
       stock: this.stock,
       money: this.money,
       reputation: this.reputation,
@@ -588,6 +591,7 @@ export class KitchenSim {
     this.day = s.day;
     this.contest = s.contest;
     this.incident = s.incident;
+    this.needsCaja = s.needsCaja;
     this.stock = s.stock;
     this.money = s.money;
     this.reputation = s.reputation;

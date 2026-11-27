@@ -24,6 +24,8 @@ import {
   buyStock,
   buyLocalUpgrade,
   acceptMission,
+  openPuerto,
+  setLocal,
   afterClose,
   chefFor,
   checkChapterNow,
@@ -392,6 +394,8 @@ export class KitchenRoom extends Room {
     this.onMessage('c:upgrade', (_cl, id: string) => manage((c) => buyLocalUpgrade(c, String(id))));
     this.onMessage('c:mission', (_cl, id: string) => manage((c) => acceptMission(c, String(id))));
     this.onMessage('c:contest', (_cl, on: boolean) => manage((c) => setContest(c, !!on)));
+    this.onMessage('c:open', () => manage((c) => openPuerto(c)));
+    this.onMessage('c:local', (_cl, id: string) => manage((c) => setLocal(c, String(id))));
     // Formación: cada uno entrena a su propio cocinero.
     this.onMessage('c:train', (client, perk: string) =>
       manage((c) => {
@@ -425,7 +429,7 @@ export class KitchenRoom extends Room {
     // Domingo de concurso: reglas del Desafío (objetivo de pedidos, ingredientes del patrocinador).
     const contest = c.contestToday;
     const params = contest ? contestParams(c, this.modo, this.estilo) : serviceParams(c, this.modo, this.estilo);
-    const sim = new KitchenSim(params, Math.random, serviceUpgrades(c));
+    const sim = new KitchenSim(params, Math.random, serviceUpgrades(c), c.localHoy);
     sim.moveOnTick = false;
     // Con camarero, nadie tiene que tomar nota.
     sim.needsCaja = this.modo > 1 && this.estilo === 'rol' && !hasStaff(c, 'camarero');

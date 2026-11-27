@@ -23,6 +23,7 @@
 //   'c:upgrade' id: comprar una mejora o decoración del local (LOCAL_UPGRADES)
 //   'c:mission' id: aceptar un encargo del tablón   'c:contest' boolean: ir al concurso (domingos)
 //   'c:train'  PerkId: tu cocinero aprende una habilidad con un punto de formación
+//   'c:open'   abrir el segundo local (El Puerto)   'c:local' 'barrio' | 'puerto': dónde se cocina hoy
 // Servidor → cliente (campaña): 'c:chapter' { n, title, reward } al completar un capítulo en la gestión
 //   'ready'    listo para abrir el restaurante (cuando lo están todos, empieza el servicio)
 //   'c:next'   en el cierre: pasar a la mañana del día siguiente

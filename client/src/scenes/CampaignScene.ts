@@ -1,11 +1,16 @@
 import Phaser from 'phaser';
 import {
   CAMPAIGN,
+  contestPrize,
+  isGrandFinal,
+  PUERTO,
+  RIVAL,
+  rivalFactor,
+  rentPerDay,
   chefPoints,
   contestAvailable,
   contestLevel,
   contestParams,
-  CONTEST_PRIZE,
   currentChapter,
   getPerk,
   perkCount,
@@ -283,7 +288,7 @@ export class CampaignScene extends Phaser.Scene {
       ['En la carta', menuOn(c).map((m) => getRecipe(m.recipeId).name).join(', ')],
       ...(c.staff.length ? ([['Personal', STAFF.filter((x) => c.staff.includes(x.id)).map((x) => x.name).join(', ')]] as [string, string][]) : []),
       ...(decorAppeal(c) ? ([['Decoración', `${Math.round(decorAppeal(c) * 100)} % más clientes`]] as [string, string][]) : []),
-      ['Gastos del día', `alquiler ${CAMPAIGN.rent} + intereses ${Math.ceil(c.debt * CAMPAIGN.interest)}${wagesPerDay(c) ? ` + sueldos ${wagesPerDay(c)}` : ''}`],
+      ['Gastos del día', `alquiler ${rentPerDay(c)} + intereses ${Math.ceil(c.debt * CAMPAIGN.interest)}${wagesPerDay(c) ? ` + sueldos ${wagesPerDay(c)}` : ''}`],
     ];
     const prev = c.lastReport;
     if (prev && !prev.bankrupt) {
@@ -317,6 +322,24 @@ export class CampaignScene extends Phaser.Scene {
       y += fs * 1.5;
     }
     y += 8 * s;
+
+    // Segundo local: dónde se cocina hoy
+    if (c.puertoOpen) {
+      txt(this, a.x, y, 'Local de hoy', fs).setAlpha(0.7);
+      y += fs * 1.4;
+      const lw = (a.w - 8) / 2;
+      (['barrio', 'puerto'] as const).forEach((id, i) => {
+        new Button(this, a.x + lw / 2 + i * (lw + 8), y + 16 * s, {
+          w: lw,
+          h: 32 * s,
+          color: c.localHoy === id ? COLORS.orange : 0x8a7a6a,
+          label: id === 'barrio' ? 'El Barrio' : `El Puerto (+${Math.round((PUERTO.demand - 1) * 100)} % gente)`,
+          fontSize: 13 * s,
+          onPress: () => net.campaign('c:local', id),
+        });
+      });
+      y += 42 * s;
+    }
 
     // Equipo: quién está, puestos y modo
     txt(this, a.x, y, 'Equipo de hoy', fs).setAlpha(0.7);
@@ -608,20 +631,29 @@ export class CampaignScene extends Phaser.Scene {
       txt(this, a.x, y, `Recompensa: ${ch.reward} monedas`, fs * 0.8, { color: '#d4a017' });
       y += fs * 1.8;
     } else {
-      const t = txt(this, a.x, y, '¡Habéis completado todos los capítulos de momento! Muy pronto: el segundo local y la cadena rival.', fs * 0.9, {
+      const t = txt(this, a.x, y, '¡Habéis completado la campaña! Mordiscos Mandarina es la mejor hamburguesería de la ciudad. Podéis seguir jugando: el restaurante es vuestro.', fs * 0.9, {
         wordWrap: { width: a.w },
         color: '#2e8a34',
       });
       y += t.height + 12;
+    }
+    // La cadena rival
+    if (c.rival) {
+      const ahead = c.reputation > c.rival.rep;
+      txt(this, a.x, y, `${RIVAL.name}: reputación ${c.rival.rep} · vosotros ${c.reputation}`, fs * 0.85, { color: ahead ? '#2e8a34' : '#c0392b' });
+      y += fs * 1.3;
+      const lost = Math.round((1 - rivalFactor(c)) * 100);
+      txt(this, a.x, y, lost ? `Os quitan un ${lost} % de los clientes. Gana fama cada día.` : 'Les ganáis en fama: no os quitan clientes.', fs * 0.72).setAlpha(0.75);
+      y += fs * 1.5;
     }
     this.add.rectangle(a.x, y - 6, a.w, 1, 0x2b1d14, 0.15).setOrigin(0);
 
     // Concurso de los domingos
     if (contestAvailable(c)) {
       const p = contestParams(c, Math.max(1, net.info?.members.length ?? 1), net.info?.estilo ?? 'rol');
-      txt(this, a.x, y, '¡Hoy es domingo de concurso!', fs, { color: '#c0392b' });
+      txt(this, a.x, y, isGrandFinal(c) ? '¡Hoy es la Gran Final!' : '¡Hoy es domingo de concurso!', fs, { color: '#c0392b' });
       y += fs * 1.4;
-      const t = txt(this, a.x, y, `Nivel ${contestLevel(c)} del Desafío: servid ${p.goal} pedidos. Premio ${CONTEST_PRIZE} y fama. Ese día no hay ventas normales (el patrocinador pone los ingredientes).`, fs * 0.78, {
+      const t = txt(this, a.x, y, `Nivel ${contestLevel(c)} del Desafío: servid ${p.goal} pedidos. Premio ${contestPrize(c)} y fama. Ese día no hay ventas normales (el patrocinador pone los ingredientes).`, fs * 0.78, {
         wordWrap: { width: a.w - 130 * s },
       }).setAlpha(0.8);
       new Button(this, a.x + a.w - 60 * s, y + t.height / 2, {
@@ -704,6 +736,33 @@ export class CampaignScene extends Phaser.Scene {
       });
     });
     let top = a.y + 40 * s;
+    // Segundo local (desde el capítulo 4)
+    if (this.localKind === 'cocina' && (c.chapter >= 4 || c.puertoOpen)) {
+      const h = 58 * s;
+      this.add.rectangle(a.x - 4, top, a.w + 8, h - 4, c.puertoOpen ? 0xd9f2d0 : 0xfff0c8).setOrigin(0);
+      txt(this, a.x + 4, top + 4, 'Segundo local: El Puerto', fs * 0.95, { color: '#c0392b' });
+      const left = c.money - PUERTO.price;
+      const warn = !c.puertoOpen && c.money >= PUERTO.price && left < 150 ? ` ¡Os quedaríais con ${left}: comprad antes la despensa!` : '';
+      txt(this, a.x + 4, top + 4 + fs * 1.2, `Otra cocina y un ${Math.round((PUERTO.demand - 1) * 100)} % más de gente. Alquiler +${PUERTO.rent} al día.${warn}`, fs * 0.75, {
+        wordWrap: { width: a.w - 130 * s },
+      }).setAlpha(0.8);
+      if (c.puertoOpen) txt(this, a.x + a.w - 8, top + h / 2 - 2, 'Abierto', fs * 0.9, { color: '#2e8a34' }).setOrigin(1, 0.5);
+      else {
+        new Button(this, a.x + a.w - 58 * s, top + h / 2 - 2, {
+          w: 112 * s,
+          h: 36 * s,
+          color: c.money >= PUERTO.price ? COLORS.red : 0x9a8a7a,
+          label: `Abrir · ${PUERTO.price}`,
+          fontSize: fs * 0.85,
+          onPress: () => {
+            if (c.money < PUERTO.price) return;
+            audio.sfx('levelUp');
+            net.campaign('c:open');
+          },
+        });
+      }
+      top += h + 4;
+    }
     if (this.localKind === 'deco') {
       txt(this, a.x, top, `La decoración atrae un ${Math.round(decorAppeal(c) * 100)} % más de clientes.`, fs * 0.85).setAlpha(0.7);
       top += fs * 1.7;
@@ -745,7 +804,7 @@ export class CampaignScene extends Phaser.Scene {
       ['Deuda', String(c.debt)],
       ['Interés', `${Math.round(CAMPAIGN.interest * 100)} % al día (hoy ${Math.ceil(c.debt * CAMPAIGN.interest)})`],
       ['Límite', `con más de ${CAMPAIGN.debtLimit} de deuda al cerrar, bancarrota`],
-      ['Alquiler del local', `${CAMPAIGN.rent} al día`],
+      ['Alquiler de los locales', `${rentPerDay(c)} al día`],
     ];
     for (const [label, value] of lines) {
       txt(this, a.x, y, label, fs * 0.85).setAlpha(0.65);
@@ -841,6 +900,7 @@ export class CampaignScene extends Phaser.Scene {
     if (r.contest) prog.push([r.contest.won ? `¡Concurso ganado! ${r.contest.served} de ${r.contest.goal}` : `Concurso: ${r.contest.served} de ${r.contest.goal}`, `+${r.contest.prize}`]);
     if (r.mission) prog.push([`${r.mission.ok ? 'Encargo cumplido' : 'Encargo fallido'}: ${r.mission.title} (${r.mission.progress})`, r.mission.ok ? `+${r.mission.reward}` : `${r.mission.rep} rep.`]);
     if (r.chapterDone) prog.push([`¡Capítulo ${r.chapterDone.n} completado! ${r.chapterDone.title}`, `+${r.chapterDone.reward}`]);
+    if (r.rivalRep != null) prog.push([`${RIVAL.name}: reputación ${r.rivalRep} (vosotros ${r.repAfter})`, '']);
     for (const x of r.xp ?? []) prog.push([`${x.name}: +${x.gained} de experiencia${x.newPoints ? ` · ¡${x.newPoints} punto${x.newPoints > 1 ? 's' : ''} nuevo${x.newPoints > 1 ? 's' : ''}!` : ''}`, '']);
     if (prog.length) {
       const ph = prog.length * lineH + 18;
@@ -852,6 +912,18 @@ export class CampaignScene extends Phaser.Scene {
         if (value) txt(this, x0 + boxW - 14, y + 9 + i * lineH, value, fs * 0.9, { color: good ? '#2e8a34' : '#c0392b' }).setOrigin(1, 0);
       });
       y += ph + 10 * s;
+    }
+
+    // ¡El final de la campaña!
+    if (r.chapterDone?.n === 5) {
+      const end = txt(this, W / 2, y, '¡Mordiscos Mandarina es la mejor hamburguesería de la ciudad!\nMega Mordisco cierra sus puertas. Habéis completado la campaña.', fs * 1.05, {
+        color: '#ffc93c',
+        stroke: '#2b1d14',
+        strokeThickness: 5,
+        align: 'center',
+        wordWrap: { width: boxW },
+      }).setOrigin(0.5, 0);
+      y += end.height + 8;
     }
 
     if (r.bankrupt) audio.sfx('runOver');

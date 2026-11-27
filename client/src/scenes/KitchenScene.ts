@@ -94,7 +94,9 @@ export class KitchenScene extends Phaser.Scene {
     // Con las mejoras de la tienda (la tercera plancha cambia el plano).
     const info = net.info;
     const upgrades = info?.juego === 'campana' && info.campana ? serviceUpgrades(info.campana) : (info?.mejoras ?? []);
-    this.sim = new KitchenSim(undefined, undefined, upgrades);
+    // En la campaña, la cocina del local donde se trabaja hoy.
+    const map = info?.juego === 'campana' && info.campana ? info.campana.localHoy : 'barrio';
+    this.sim = new KitchenSim(undefined, undefined, upgrades, map);
     this.sim.moveOnTick = false;
     if (net.snapshot) this.sim.applySnapshot(net.snapshot, net.id);
 

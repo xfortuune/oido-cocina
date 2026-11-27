@@ -3,6 +3,7 @@
 
 import {
   menuOn,
+  PUERTO,
   type Campaign,
   type ChefTraining,
   type DayReport,
@@ -49,7 +50,7 @@ export const CHAPTERS: Chapter[] = [
       const served = c.totals.served - c.chapterStart.served;
       const missions = c.missionsDone - c.chapterStart.missions;
       return [
-        { text: 'Reputación 65 o más', done: c.reputation >= 65, progress: `${c.reputation} de 65` },
+        { text: 'Reputación 60 o más', done: c.reputation >= 60, progress: `${c.reputation} de 60` },
         { text: 'Tener al menos un empleado', done: c.staff.length >= 1 },
         { text: 'Servir 60 hamburguesas', done: served >= 60, progress: `${Math.min(served, 60)} de 60` },
         { text: 'Completar 2 encargos del tablón', done: missions >= 2, progress: `${Math.min(missions, 2)} de 2` },
@@ -71,7 +72,39 @@ export const CHAPTERS: Chapter[] = [
       ];
     },
   },
+  {
+    n: 4,
+    title: 'El segundo local',
+    story: 'Mordiscos Mandarina se queda pequeño. Abrid un local en el puerto… pero cuidado: la cadena Mega Mordisco ha puesto el ojo en el barrio.',
+    reward: 300,
+    objectives: (c) => {
+      const served = c.totals.served - c.chapterStart.served;
+      return [
+        { text: `Abrir El Puerto (pestaña Local, ${PUERTO.price})`, done: c.puertoOpen },
+        { text: 'Tener 3 empleados', done: c.staff.length >= 3, progress: `${Math.min(c.staff.length, 3)} de 3` },
+        { text: 'Servir 150 hamburguesas', done: served >= 150, progress: `${Math.min(served, 150)} de 150` },
+      ];
+    },
+  },
+  {
+    n: 5,
+    title: 'La guerra de las hamburguesas',
+    story: 'Mega Mordisco quiere quedarse con la ciudad. Ganadles en fama, llevaos la Gran Final y demostrad quién manda.',
+    reward: 500,
+    objectives: (c) => {
+      const rival = c.rival?.rep ?? 0;
+      const finals = c.contestsWon - c.chapterStart.contests;
+      return [
+        { text: 'Más reputación que Mega Mordisco', done: c.reputation > rival, progress: `${c.reputation} contra ${rival}` },
+        { text: 'Ganar la Gran Final (un domingo)', done: finals >= 1 },
+        { text: 'Tener 2000 monedas', done: c.money >= 2000, progress: `${Math.min(c.money, 2000)} de 2000` },
+      ];
+    },
+  },
 ];
+
+/** La cadena rival aparece en el capítulo 4 y gana fama cada día. */
+export const RIVAL = { name: 'Mega Mordisco', start: 65, perDay: 1, max: 95 };
 
 /** Capítulo actual (undefined cuando ya se han completado todos los que hay). */
 export function currentChapter(c: Campaign): Chapter | undefined {
@@ -89,6 +122,9 @@ export function checkChapter(c: Campaign): DayReport['chapterDone'] {
   c.money += ch.reward;
   c.chapter++;
   c.chapterStart = { served: c.totals.served, missions: c.missionsDone, contests: c.contestsWon };
+  if (c.chapter >= 4 && !c.rival) c.rival = { rep: RIVAL.start };
+  // Capítulo 5 completado: ¡el final! Después se puede seguir jugando libre.
+  if (ch.n === CHAPTERS[CHAPTERS.length - 1].n) c.finished = true;
   return { n: ch.n, title: ch.title, reward: ch.reward };
 }
 
@@ -100,7 +136,8 @@ function rnd(day: number, salt: number): number {
   h ^= h >>> 15;
   h = Math.imul(h, 2246822519) >>> 0;
   h ^= h >>> 13;
-  return (h % 10000) / 10000;
+  // >>> 0: el XOR deja un entero con signo; negativo daría un índice fuera de la lista.
+  return ((h >>> 0) % 10000) / 10000;
 }
 
 /** Los encargos del tablón aparecen a partir del capítulo 2: dos por mañana. */
@@ -175,7 +212,17 @@ export function setContest(c: Campaign, on: boolean): boolean {
 
 /** Cada concurso es más difícil que el anterior. */
 export function contestLevel(c: Campaign): number {
-  return Math.min(MAX_LEVEL, 4 + 2 * Math.floor(c.day / 7));
+  const base = Math.min(MAX_LEVEL, 4 + 2 * Math.floor(c.day / 7));
+  return isGrandFinal(c) ? Math.max(14, base) : base;
+}
+
+/** En el capítulo 5 el concurso de los domingos es la Gran Final (más difícil y con más premio). */
+export function isGrandFinal(c: Campaign): boolean {
+  return c.chapter === 5;
+}
+
+export function contestPrize(c: Campaign): number {
+  return isGrandFinal(c) ? 300 : CONTEST_PRIZE;
 }
 
 export const CONTEST_PRIZE = 100;
@@ -235,7 +282,7 @@ export function afterClose(c: Campaign, r: DayReport, e: DayExtras): void {
   // Concurso
   if (e.contest) {
     const won = e.contest.served >= e.contest.goal;
-    const prize = won ? CONTEST_PRIZE : 20;
+    const prize = won ? contestPrize(c) : 20;
     c.money += prize;
     if (won) {
       c.contestsWon++;
@@ -250,6 +297,9 @@ export function afterClose(c: Campaign, r: DayReport, e: DayExtras): void {
     t.xp += gained;
     return { name, gained, newPoints: chefPoints(t) - before };
   });
+  // La cadena rival gana fama cada día.
+  if (c.rival) c.rival.rep = Math.min(RIVAL.max, c.rival.rep + RIVAL.perDay);
+  r.rivalRep = c.rival?.rep ?? null;
   r.moneyAfter = c.money;
   r.repAfter = c.reputation;
   r.chapterDone = checkChapter(c);

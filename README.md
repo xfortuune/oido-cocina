@@ -215,7 +215,8 @@ Cada día tiene tres partes:
 2. **Servicio**: la cocina de siempre, pero cada caja tiene las **unidades reales** de la despensa (si se acaba la carne,
    no hay más hasta mañana), solo se piden platos de la carta y se cobra a vuestros precios. La gente que viene depende
    de los precios, la reputación y el día de la semana (el fin de semana, más).
-3. **Cierre**: ventas, propinas, multas, repartos, compras, alquiler (15), sueldos, intereses, lo caducado y la reputación.
+3. **Cierre**: ventas, propinas, multas, repartos, compras, alquiler (10; 35 con El Puerto), sueldos, intereses, lo caducado y la reputación.
+   La reputación sube si se atiende bien a la mayoría y baja si se pierden muchos clientes (±6 al día como mucho).
    Si el día acaba en negativo, el banco presta lo que falte con un 10 % de comisión; con más de **400 de deuda**,
    **bancarrota**: se empieza de nuevo (se guarda el mejor día en el «salón de la fama»).
 
@@ -225,6 +226,14 @@ Cada día tiene tres partes:
   1. *El puesto del barrio*: llegar al día 8 y devolver toda la deuda (+60).
   2. *La hora punta*: reputación 65, un empleado, 60 hamburguesas y 2 encargos del tablón (+120).
   3. *El concurso del barrio*: saber 4 recetas, ganar un concurso y tener 300 monedas (+200).
+  4. *El segundo local*: abrir El Puerto, tener 3 empleados y servir 150 hamburguesas (+300).
+  5. *La guerra de las hamburguesas*: más reputación que Mega Mordisco, ganar la Gran Final y tener 2000 monedas
+     (+500). Es el **final**: después se puede seguir jugando libre.
+- **El Puerto** (desde el capítulo 4, 500): segundo local con **otra cocina** (bebidas y freidoras a la izquierda,
+  planchas a la derecha, dos mesas de montaje y dos tramos de pase), un 40 % más de gente y 25 más de alquiler al día.
+  Cada mañana se elige en qué local se cocina.
+- **Mega Mordisco**, la cadena rival (desde el capítulo 4): su reputación sube cada día y, si os supera, os quita hasta
+  un 30 % de los clientes. En el capítulo 5 el concurso del domingo es la **Gran Final** (más difícil, premio 300).
 - **Tablón de encargos** (desde el capítulo 2): dos por mañana; se acepta uno para el servicio de ese día
   (boda, crítico, festival, inspección sanitaria, excursión del colegio). Bien: dinero y reputación; mal: -2 de reputación.
 - **Concurso de cocina, los domingos**: en lugar del servicio normal, un nivel del Desafío (cada vez más difícil) con
@@ -233,7 +242,10 @@ Cada día tiene tres partes:
   un punto para aprender para siempre una habilidad del Desafío. Se guarda por cuenta de Discord (en el navegador,
   por nombre) y se conserva aunque el restaurante quiebre.
 
-La lógica está en `shared/src/campaign.ts` y `shared/src/progress.ts`. Próxima fase: el segundo local, la cadena rival y el final.
+La lógica está en `shared/src/campaign.ts` y `shared/src/progress.ts`.
+
+**Equilibrado:** `npx tsx scripts/simular-campana.ts` simula muchas campañas con distintos niveles de juego (la parte de
+los clientes que se atiende). Con los números actuales, atendiendo a 3 de cada 4 la campaña se completa hacia el día 35.
 
 **Guardado en Railway:** monta un **Volume** en `/data` y añade la variable `DATA_DIR=/data`. Ahí se guardan las campañas
 y el ranking; sin volumen se borrarían en cada despliegue.

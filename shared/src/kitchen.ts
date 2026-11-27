@@ -105,3 +105,52 @@ export const PLAYER_SPAWNS = [
   { x: 2.5, y: 4.5 },
   { x: 8.5, y: 4.5 },
 ];
+
+/**
+ * El segundo local de la campaña, en el puerto: más grande y con todo cambiado de sitio.
+ * Bebidas y freidoras a la izquierda, planchas a la derecha, dos mesas de montaje en el centro
+ * y dos tramos de pase. Mismo ancho de calle (los clientes esperan en los mismos huecos).
+ */
+export const PUERTO_MAP = [
+  '...........',
+  '...........',
+  '...........',
+  'WW#PP#PP#WW',
+  'N_________G',
+  'D__MM_MM__G',
+  'F_________#',
+  'F__#####__W',
+  'W_________W',
+  'WbcqlptkTWW',
+];
+
+export type KitchenId = 'barrio' | 'puerto';
+
+export interface KitchenDef {
+  id: KitchenId;
+  name: string;
+  rows: string[];
+  spawns: { x: number; y: number }[];
+  /** Casilla que se convierte en plancha con la mejora «Tercera plancha». */
+  extraGrill: { x: number; y: number };
+}
+
+export const KITCHENS: Record<KitchenId, KitchenDef> = {
+  barrio: { id: 'barrio', name: 'El Barrio', rows: KITCHEN_MAP, spawns: PLAYER_SPAWNS, extraGrill: { x: 5, y: 6 } },
+  puerto: {
+    id: 'puerto',
+    name: 'El Puerto',
+    rows: PUERTO_MAP,
+    spawns: [
+      { x: 2.5, y: 8.5 },
+      { x: 8.5, y: 8.5 },
+      { x: 2.5, y: 4.5 },
+      { x: 8.5, y: 4.5 },
+    ],
+    extraGrill: { x: 10, y: 6 },
+  },
+};
+
+export function getKitchen(id: string | undefined): KitchenDef {
+  return KITCHENS[id as KitchenId] ?? KITCHENS.barrio;
+}

@@ -198,7 +198,7 @@ await solo.room.leave();
   while (g1.info.phase !== 'cierre') await wait(300);
   c = g1.info.campana;
   const r = c.lastReport;
-  check(r?.day === 1 && c.day === 2 && r.rent === 15 && r.wages === 12, `Cierre del día 1: alquiler ${r?.rent}, sueldos ${r?.wages}, intereses ${r?.interest}, dinero ${r?.moneyAfter}`);
+  check(r?.day === 1 && c.day === 2 && r.rent === 10 && r.wages === 12, `Cierre del día 1: alquiler ${r?.rent}, sueldos ${r?.wages}, intereses ${r?.interest}, dinero ${r?.moneyAfter}`);
   check(c.stock.carne.reduce((n, l) => n + l.qty, 0) === carne1 - 1, 'La carne usada se descuenta de la despensa');
   g1.room.send('c:next');
   await wait(300);
@@ -246,6 +246,30 @@ await solo.room.leave();
   await wait(300);
   check(lia.info.campana.activeMission?.id === c.board[0].id, `Aceptan el encargo «${c.board[0].title}»`);
   await lia.room.leave();
+}
+
+// Campaña, fase 4: abrir El Puerto (otra cocina) y la cadena rival.
+{
+  const key = `bots4-${Date.now()}`;
+  mkdirSync('server/data/campanas', { recursive: true });
+  writeFileSync(`server/data/campanas/${key}.json`, JSON.stringify({ version: 1, key, day: 30, money: 900, debt: 0, reputation: 70, chapter: 4, rival: { rep: 66 } }));
+  const ro = await bot('Rosa', { sala: `campana-${key}`, grupo: key, juego: 'campana', turno: 10 });
+  ro.room.send('c:open');
+  await wait(300);
+  let c = ro.info.campana;
+  check(c.puertoOpen && c.localHoy === 'puerto' && c.money === 400, `Abren El Puerto (900 → ${c.money}) y hoy se cocina allí`);
+  ro.room.send('ready');
+  await wait(500);
+  check(ro.snap?.map === 'puerto' && ro.snap.players[0].x === 2.5 && ro.snap.players[0].y === 8.5, 'El servicio es en la cocina del puerto');
+  while (ro.info.phase !== 'cierre') await wait(300);
+  c = ro.info.campana;
+  check(c.lastReport.rent === 35 && c.rival.rep === 67 && c.lastReport.rivalRep === 67, `Alquiler de los dos locales (${c.lastReport.rent}) y el rival gana fama (${c.rival.rep})`);
+  ro.room.send('c:next');
+  await wait(200);
+  ro.room.send('c:local', 'barrio');
+  await wait(300);
+  check(ro.info.campana.localHoy === 'barrio', 'Al día siguiente pueden volver al barrio');
+  await ro.room.leave();
 }
 
 // Partida en solitario desde el nivel 2: el bot cocina dos Chispas, supera el nivel,

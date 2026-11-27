@@ -5,8 +5,9 @@
 
 import {
   CUSTOMER_SLOTS_X,
+  getKitchen,
   parseKitchen,
-  PLAYER_SPAWNS,
+  type KitchenId,
   type CrateContent,
   type Flavor,
   type Kitchen,
@@ -15,7 +16,6 @@ import {
 } from './kitchen';
 import { levelParams, RECIPE_LEVEL, type LevelParams } from './levels';
 import { perkCount } from './perks';
-import { EXTRA_GRILL } from './shop';
 import { DEFAULT_LOOK, type ChefLook } from './looks';
 import { getRecipe, type Ingredient } from './recipes';
 
@@ -188,6 +188,8 @@ export interface SimSnapshot {
   /** Campaña: día del restaurante (0 en el Desafío) y existencias de cada caja. */
   day: number;
   contest: boolean;
+  /** Cocina en la que se juega (barrio o puerto). */
+  map: KitchenId;
   stock: Record<string, number> | null;
   money: number;
   reputation: number;
@@ -234,6 +236,7 @@ export class KitchenSim {
   /** Fallos ya perdonados por Disculpa a tiempo en esta ronda, por jugador. */
   private forgiven: Record<string, number> = {};
   private nextId = 1;
+  private spawns: { x: number; y: number }[];
   private spawnTimer: number;
   private events: SimEvent[] = [];
 
@@ -243,15 +246,19 @@ export class KitchenSim {
     private readonly random: () => number = Math.random,
     /** Mejoras de la tienda compradas en esta partida (shop.ts). */
     readonly upgrades: readonly string[] = [],
+    /** Qué cocina: la del barrio (la de siempre) o la del puerto (campaña). */
+    readonly map: KitchenId = 'barrio',
   ) {
     this.turnDuration = params.duration;
     this.level = params.level;
     this.goal = params.goal;
     // El primer cliente llega enseguida.
     this.spawnTimer = 2;
-    this.kitchen = parseKitchen();
+    const def = getKitchen(map);
+    this.spawns = def.spawns;
+    this.kitchen = parseKitchen(def.rows);
     if (upgrades.includes('plancha3')) {
-      const t = this.kitchen.tiles[EXTRA_GRILL.y][EXTRA_GRILL.x];
+      const t = this.kitchen.tiles[def.extraGrill.y][def.extraGrill.x];
       t.kind = 'grill';
     }
     for (const row of this.kitchen.tiles) {
@@ -283,7 +290,7 @@ export class KitchenSim {
   // ------------------------------------------------------------ jugadores
 
   addPlayer(id: string, name: string, color: number, roles: Role[] = ROLES, perks: string[] = [], look: ChefLook = DEFAULT_LOOK): Player {
-    const spawn = PLAYER_SPAWNS[color % PLAYER_SPAWNS.length];
+    const spawn = this.spawns[color % this.spawns.length];
     const p: Player = {
       id,
       name,
@@ -522,6 +529,7 @@ export class KitchenSim {
       goal: this.goal,
       day: this.day,
       contest: this.contest,
+      map: this.map,
       stock: this.stock,
       money: this.money,
       reputation: this.reputation,

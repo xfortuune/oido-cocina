@@ -2,6 +2,7 @@
 // banco), un servicio (la cocina de siempre, con el stock y los precios reales) y un cierre con las cuentas.
 // Este módulo es lógica pura: el servidor la usa para modificar y guardar la campaña.
 
+import type { KitchenId } from './kitchen';
 import { levelParams, type Estilo, type LevelParams } from './levels';
 import { getRecipe, RECIPES } from './recipes';
 
@@ -169,7 +170,7 @@ export const CAMPAIGN = {
   startMoney: 150,
   startDebt: 100,
   startReputation: 50,
-  rent: 15,
+  rent: 10,
   /** Interés diario de la deuda. */
   interest: 0.03,
   /** Con más deuda que esto al cerrar un día, bancarrota. */
@@ -228,6 +229,8 @@ export interface DayReport {
   contest?: { served: number; goal: number; won: boolean; prize: number } | null;
   chapterDone?: { n: number; title: string; reward: number } | null;
   xp?: { name: string; gained: number; newPoints: number }[];
+  /** Reputación de la cadena rival al cerrar (desde el capítulo 4). */
+  rivalRep?: number | null;
 }
 
 export interface Campaign {
@@ -259,6 +262,11 @@ export interface Campaign {
   contestToday: boolean;
   /** Formación de cada cocinero (por cuenta de Discord, o por nombre en el navegador). */
   chefs: Record<string, ChefTraining>;
+  /** Fase 4: segundo local (El Puerto), dónde se cocina hoy, la cadena rival y si se ha llegado al final. */
+  puertoOpen: boolean;
+  localHoy: KitchenId;
+  rival: { rep: number } | null;
+  finished: boolean;
   lastReport: DayReport | null;
   /** Lo que queda de partidas anteriores tras una bancarrota. */
   fame: { quiebras: number; mejorDia: number };
@@ -308,6 +316,10 @@ export function newCampaign(key: string, fame = { quiebras: 0, mejorDia: 0 }): C
     activeMission: null,
     contestToday: false,
     chefs: {},
+    puertoOpen: false,
+    localHoy: 'barrio',
+    rival: null,
+    finished: false,
     sides: { ...SIDE_BASE },
     spentToday: 0,
     lastReport: null,
@@ -445,7 +457,47 @@ export function demandFactor(c: Campaign): number {
   const variety = 1 + 0.06 * (items.length - 1);
   const rep = 0.55 + (c.reputation / 100) * 0.9;
   const decor = 1 + decorAppeal(c);
-  return Math.max(0.3, Math.min(2.5, appeal * variety * rep * decor * weekdayFactor(c.day)));
+  // El Puerto tiene más paso de gente; el rival, si tiene más fama, se lleva clientes.
+  const local = c.localHoy === 'puerto' ? PUERTO.demand : 1;
+  return Math.max(0.3, Math.min(3, appeal * variety * rep * decor * local * rivalFactor(c) * weekdayFactor(c.day)));
+}
+
+// ---------------------------------------------------------------- segundo local y rival
+
+export const PUERTO = {
+  /** Precio de abrir el segundo local (desde el capítulo 4). */
+  price: 500,
+  /** Alquiler extra al día en cuanto está abierto (se cocine allí o no). */
+  rent: 25,
+  /** Cuánta más gente pasa por el puerto. */
+  demand: 1.4,
+};
+
+export function openPuerto(c: Campaign): boolean {
+  if (c.puertoOpen || c.chapter < 4 || c.money < PUERTO.price) return false;
+  c.money -= PUERTO.price;
+  c.spentToday += PUERTO.price;
+  c.puertoOpen = true;
+  c.localHoy = 'puerto';
+  return true;
+}
+
+export function setLocal(c: Campaign, id: string): boolean {
+  if (id !== 'barrio' && id !== 'puerto') return false;
+  if (id === 'puerto' && !c.puertoOpen) return false;
+  if (c.localHoy === id) return false;
+  c.localHoy = id;
+  return true;
+}
+
+export function rentPerDay(c: Campaign): number {
+  return CAMPAIGN.rent + (c.puertoOpen ? PUERTO.rent : 0);
+}
+
+/** Con el rival por encima en reputación, hasta un 30 % menos de clientes. */
+export function rivalFactor(c: Campaign): number {
+  if (!c.rival) return 1;
+  return 1 - Math.max(0, Math.min(0.3, (c.rival.rep - c.reputation) / 120));
 }
 
 /** La dificultad de la cocina crece con los días (como los niveles del Desafío, pero más despacio). */
@@ -455,7 +507,7 @@ export function campaignLevel(day: number): number {
 
 /** Parámetros del servicio de hoy: ritmo según la demanda, solo platos de la carta. */
 export function serviceParams(c: Campaign, players: number, estilo: Estilo): LevelParams {
-  const p = levelParams(campaignLevel(c.day), players, estilo);
+  const p = levelParams(campaignLevel(c.day) + (c.localHoy === 'puerto' ? 1 : 0), players, estilo);
   const d = demandFactor(c);
   const recipes = menuOn(c).map((m) => m.recipeId);
   // Patatas y bebida caras se piden menos.
@@ -530,13 +582,16 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
   const items = menuOn(c);
   const ratio = items.reduce((n, m) => n + m.price / getRecipe(m.recipeId).price, 0) / Math.max(1, items.length);
   const repFromPrices = ratio > 1.5 ? -4 : ratio > 1.25 ? -2 : ratio < 0.85 ? 1 : 0;
-  c.reputation = Math.max(0, Math.min(100, Math.round(r.reputation) + repFromPrices));
+  // La reputación de la campaña depende de cómo fue el día en conjunto (no de la del servicio, que cae
+  // 8 por cada cliente perdido): sube si se atiende bien a la mayoría y baja si se pierden muchos. ±6 al día como mucho.
+  const serviceDelta = Math.max(-6, Math.min(6, Math.round(0.5 * r.served + 0.4 * r.perfect - 1.4 * r.lost)));
+  c.reputation = Math.max(0, Math.min(100, repBefore + serviceDelta + repFromPrices));
 
   // Repartos a domicilio: con lo que quede en la despensa, más cuanta más reputación.
   const { count: deliveries, income: deliveryIncome } = hasStaff(c, 'repartidor') ? deliver(c, Math.floor(c.reputation / 8)) : { count: 0, income: 0 };
   c.money += deliveryIncome;
 
-  const rent = CAMPAIGN.rent;
+  const rent = rentPerDay(c);
   const interest = Math.ceil(c.debt * CAMPAIGN.interest);
   const wages = wagesPerDay(c);
   c.money -= rent + interest + wages;
@@ -637,5 +692,9 @@ export function reviveCampaign(raw: unknown, key: string): Campaign {
   out.activeMission ??= null;
   out.contestToday ??= false;
   out.chefs ??= {};
+  out.puertoOpen ??= false;
+  out.localHoy = out.puertoOpen && out.localHoy === 'puerto' ? 'puerto' : 'barrio';
+  out.rival ??= null;
+  out.finished ??= false;
   return out;
 }

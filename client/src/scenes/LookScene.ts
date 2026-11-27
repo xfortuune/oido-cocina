@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { HATS, type ChefLook } from '@hora-punta/shared';
 import { audio } from '../audio';
-import { saveLook, savedLook, savedRecord } from '../net';
+import { ownedHats, saveLook, savedLook, savedRecord } from '../net';
 import { CHEF_COLORS, chefKey } from '../pixel/sprites';
 import { clamp, COLORS, drawBackground, pixelPanel, txt } from '../theme';
 import { Button } from '../ui/Button';
@@ -87,7 +87,7 @@ export class LookScene extends Phaser.Scene {
     HATS.forEach((hat, n) => {
       const cx = W / 2 - boxW / 2 + (n % cols) * (cardW + gap);
       const cy = y + Math.floor(n / cols) * (cardH + gap);
-      const unlocked = record >= hat.unlock;
+      const unlocked = hat.unlock >= 0 ? record >= hat.unlock : ownedHats().includes(hat.id);
       const selected = this.look.hat === hat.id;
       const g = this.add.graphics();
       pixelPanel(g, cx, cy, cardW, cardH, selected ? 0xffe2b8 : unlocked ? COLORS.panel : 0x9a8a7a, 2);
@@ -96,7 +96,7 @@ export class LookScene extends Phaser.Scene {
         .setScale(Math.max(2, Math.round(2.4 * s)))
         .setOrigin(0.5, 1);
       if (!unlocked) icon.setTint(0x333333);
-      txt(this, cx + cardW / 2, cy + cardH - 5, unlocked ? hat.name : `Nivel ${hat.unlock}`, 12 * s, {
+      txt(this, cx + cardW / 2, cy + cardH - 5, unlocked ? hat.name : hat.unlock >= 0 ? `Nivel ${hat.unlock}` : 'En la tienda', 12 * s, {
         color: unlocked ? '#2b1d14' : '#fff4dc',
       }).setOrigin(0.5, 1);
       if (unlocked) {

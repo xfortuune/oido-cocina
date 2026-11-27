@@ -1,16 +1,18 @@
 import Phaser from 'phaser';
 import {
   CONFIG,
-  CUSTOMER_SLOTS_X,
   CUSTOMER_Y,
   EMOTES,
   serviceUpgrades,
+  kitchenFor,
   getRecipe,
   KitchenSim,
   ROLE_NAMES,
   roleFor,
   TICK_MS,
+  type HatId,
   type InputMessage,
+  type TileKind,
   type Order,
   type OrderPart,
   type Player,
@@ -95,7 +97,8 @@ export class KitchenScene extends Phaser.Scene {
     const info = net.info;
     const upgrades = info?.juego === 'campana' && info.campana ? serviceUpgrades(info.campana) : (info?.mejoras ?? []);
     // En la campaña, la cocina del local donde se trabaja hoy.
-    const map = info?.juego === 'campana' && info.campana ? info.campana.localHoy : 'barrio';
+    const map =
+      info?.juego === 'campana' && info.campana ? kitchenFor(info.campana.upgrades, info.campana.localHoy) : kitchenFor(info?.mejoras ?? []);
     this.sim = new KitchenSim(undefined, undefined, upgrades, map);
     this.sim.moveOnTick = false;
     if (net.snapshot) this.sim.applySnapshot(net.snapshot, net.id);
@@ -109,6 +112,7 @@ export class KitchenScene extends Phaser.Scene {
     this.leaving = false;
 
     this.buildWorld();
+    this.addHelpers();
     this.overlay = this.add.graphics().setDepth(500);
     this.syncPlayers(0, 0);
     this.layoutCamera();
@@ -239,6 +243,41 @@ export class KitchenScene extends Phaser.Scene {
     if (held && !st?.item) return 'Dejar';
     if (!held && st?.item) return 'Coger';
     return '—';
+  }
+
+  /**
+   * Empleados (del Desafío o de la campaña): se ven junto a su puesto, moviéndose un poco.
+   * Son decorado: no chocan con nadie; lo que hacen lo hace la simulación.
+   */
+  private addHelpers(): void {
+    const info = net.info;
+    const hired = info?.juego === 'campana' ? (info.campana?.staff ?? []) : (info?.mejoras ?? []);
+    const SPOTS: Record<string, { kind: TileKind; apron: number; hat: HatId }> = {
+      emp_camarero: { kind: 'pase', apron: 2, hat: 'gorra' },
+      camarero: { kind: 'pase', apron: 2, hat: 'gorra' },
+      emp_freidor: { kind: 'fryer', apron: 5, hat: 'panuelo' },
+      ayudante: { kind: 'fryer', apron: 5, hat: 'panuelo' },
+      emp_barman: { kind: 'drinks', apron: 7, hat: 'gorra' },
+      emp_limpiador: { kind: 'trash', apron: 6, hat: 'panuelo' },
+      pinche: { kind: 'grill', apron: 4, hat: 'gorro' },
+    };
+    const used = new Set<string>();
+    for (const id of hired) {
+      const spot = SPOTS[id];
+      if (!spot) continue;
+      const tile = this.sim.kitchen.tiles.flat().find((t) => t.kind === spot.kind && !used.has(`${t.x},${t.y}`));
+      if (!tile) continue;
+      used.add(`${tile.x},${tile.y}`);
+      // De pie en el suelo de al lado, medio pegado al puesto.
+      const dirs = [[0, 1], [1, 0], [-1, 0], [0, -1]];
+      const d = dirs.find(([dx, dy]) => this.sim.tile(tile.x + dx, tile.y + dy)?.kind === 'floor') ?? [0, 1];
+      const px = (tile.x + 0.5 + d[0] * 0.55) * TILE;
+      const py = (tile.y + 0.5 + d[1] * 0.55) * TILE + 6;
+      const dir = d[1] < 0 ? 'down' : d[1] > 0 ? 'up' : 'side';
+      const sprite = this.add.image(px, py, chefKey({ apron: spot.apron, hat: spot.hat }, dir, 0)).setOrigin(0.5, 1).setDepth(9 + py).setAlpha(0.95);
+      if (d[0] > 0) sprite.setFlipX(true);
+      this.tweens.add({ targets: sprite, y: py - 1, duration: 300 + Math.random() * 200, yoyo: true, repeat: -1 });
+    }
   }
 
   private addStockLabel(key: string, item: string, x: number, y: number, icon?: Phaser.GameObjects.Image): void {
@@ -516,7 +555,7 @@ export class KitchenScene extends Phaser.Scene {
   }
 
   private spawnCustomer(order: Order): CustomerView {
-    const x = CUSTOMER_SLOTS_X[order.slot] * TILE;
+    const x = this.sim.slots[order.slot] * TILE;
     const y = CUSTOMER_Y * TILE + 5;
     const fromLeft = order.slot < 2 || (order.slot === 2 && order.id % 2 === 0);
     const sprite = this.add.image(fromLeft ? -12 : this.sim.kitchen.width * TILE + 12, y, customerKey(order.look)).setOrigin(0.5, 1).setDepth(10 + y);

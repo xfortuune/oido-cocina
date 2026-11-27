@@ -11,6 +11,10 @@ import {
   perkCount,
   PERK_EVERY,
   rollPerkOffer,
+  rollSurprise,
+  wagesPerRound,
+  kitchenFor,
+  getPerk,
   cleanLook,
   EMOTES,
   getUpgrade,
@@ -90,6 +94,9 @@ export class KitchenRoom extends Room {
   /** Dinero y mejoras de la tienda de la partida en curso. */
   private dinero = 0;
   private mejoras: string[] = [];
+  /** Consumibles pedidos para la próxima ronda y cajas sorpresa abiertas (cada una cuesta más). */
+  private consumibles: string[] = [];
+  private sorpresas = 0;
   /** Totales de la partida en curso, para el resumen final. */
   private run = newRun();
   /** Grupo del ranking (lo trae el primero que entra). */
@@ -190,7 +197,7 @@ export class KitchenRoom extends Room {
       this.lastEmote.set(client.sessionId, now);
       this.broadcast('emote', { id: client.sessionId, emote });
     });
-    this.onMessage('buy', (_client, id: string) => this.buy(String(id)));
+    this.onMessage('buy', (client, id: string) => this.buy(client, String(id)));
     this.onMessage('ready', (client) => {
       const m = this.members.get(client.sessionId);
       if ((this.phase !== 'shop' && this.phase !== 'gestion') || !m) return;
@@ -333,12 +340,15 @@ export class KitchenRoom extends Room {
     const covered = new Set([...this.members.values()].flatMap((m) => m.roles));
     if (!ROLES.every((r) => covered.has(r)) || this.members.size < this.modo) return;
 
-    const sim = new KitchenSim(levelParams(this.nivel, this.modo, this.estilo), Math.random, this.mejoras);
+    // Mejoras y reformas (la cocina crece) más los consumibles de esta ronda.
+    const sim = new KitchenSim(levelParams(this.nivel, this.modo, this.estilo), Math.random, [...this.mejoras, ...this.consumibles], kitchenFor(this.mejoras));
     sim.moveOnTick = false;
     // En el modo libre no hay que tomar nota: los clientes piden directamente.
-    sim.needsCaja = this.modo > 1 && this.estilo === 'rol';
+    sim.needsCaja = this.modo > 1 && this.estilo === 'rol' && !this.mejoras.includes('emp_camarero');
     if (this.turnDuration) sim.turnDuration = this.turnDuration;
-    for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles, m.perks, m.look);
+    // Café cargado: esta ronda, todos con unas Zapatillas rápidas de más.
+    const coffee = this.consumibles.includes('c_cafe') ? ['zapatillas'] : [];
+    for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles, [...m.perks, ...coffee], m.look);
     // Clientela fiel: más reputación al empezar.
     const fans = [...this.members.values()].reduce((n, m) => n + perkCount(m.perks, 'clientela'), 0);
     sim.reputation += 10 * fans + (this.mejoras.includes('resenas') ? 15 : 0);
@@ -429,7 +439,7 @@ export class KitchenRoom extends Room {
     // Domingo de concurso: reglas del Desafío (objetivo de pedidos, ingredientes del patrocinador).
     const contest = c.contestToday;
     const params = contest ? contestParams(c, this.modo, this.estilo) : serviceParams(c, this.modo, this.estilo);
-    const sim = new KitchenSim(params, Math.random, serviceUpgrades(c), c.localHoy);
+    const sim = new KitchenSim(params, Math.random, serviceUpgrades(c), kitchenFor(c.upgrades, c.localHoy));
     sim.moveOnTick = false;
     // Con camarero, nadie tiene que tomar nota.
     sim.needsCaja = this.modo > 1 && this.estilo === 'rol' && !hasStaff(c, 'camarero');
@@ -510,11 +520,14 @@ export class KitchenRoom extends Room {
       const prev = run.players.get(key);
       run.players.set(key, { ...p, score: (prev?.score ?? 0) + p.score });
     }
+    // Los empleados cobran de lo ganado en la ronda; los consumibles se gastan.
+    const wages = wagesPerRound(this.mejoras);
     const earnedRound = passed && !won ? Math.max(0, sim.money) : 0;
+    this.consumibles = [];
     let runSummary: RunSummary | null = null;
     if (passed && !won) {
       this.nivel = sim.level + 1;
-      this.dinero += earnedRound;
+      this.dinero = Math.max(0, this.dinero + earnedRound - wages);
     } else {
       runSummary = this.finishRun();
       this.resetRun();
@@ -533,6 +546,7 @@ export class KitchenRoom extends Room {
       won,
       perkNext,
       earnedRound,
+      wages: passed && !won ? wages : 0,
       run: runSummary,
     };
     this.sim = null;
@@ -577,6 +591,8 @@ export class KitchenRoom extends Room {
     this.run = newRun();
     this.dinero = 0;
     this.mejoras = [];
+    this.consumibles = [];
+    this.sorpresas = 0;
     this.nivel = 1;
     this.runPerks.clear();
     for (const [id, m] of this.members) {
@@ -617,15 +633,45 @@ export class KitchenRoom extends Room {
     for (const m of this.members.values()) m.ready = false;
   }
 
-  private buy(id: string): void {
+  private buy(client: Client, id: string): void {
     const u = getUpgrade(id);
-    if (this.phase !== 'shop' || !u || this.mejoras.includes(u.id)) return;
-    const price = upgradePrice(u, this.modo);
+    if (this.phase !== 'shop' || !u) return;
+    // Mejoras, reformas y empleados: una vez; con su nivel mínimo y, si toca, lo anterior comprado.
+    const once = u.kind === 'mejora' || u.kind === 'reforma' || u.kind === 'empleado';
+    if (once && this.mejoras.includes(u.id)) return;
+    if (u.minLevel && this.nivel < u.minLevel) return;
+    if (u.requires && !this.mejoras.includes(u.requires)) return;
+    if (u.kind === 'consumible' && this.consumibles.includes(u.id)) return;
+    const price = upgradePrice(u, this.modo, this.sorpresas);
     if (this.dinero < price) return;
     this.dinero -= price;
-    this.mejoras.push(u.id);
+    if (once) this.mejoras.push(u.id);
+    else if (u.kind === 'consumible') this.consumibles.push(u.id);
+    else if (u.kind === 'ropa' && u.hat) client.send('unlock', u.hat);
+    else if (u.kind === 'sorpresa') this.openSurprise(price);
     this.broadcast('bought', u.id);
     this.broadcastRoom();
+  }
+
+  /** Caja sorpresa: se aplica lo que toque y se cuenta a todos. */
+  private openSurprise(price: number): void {
+    this.sorpresas++;
+    const res = rollSurprise(this.mejoras, this.consumibles, price);
+    let text = res.text;
+    if (res.kind === 'mejora') this.mejoras.push(res.id);
+    else if (res.kind === 'consumible') this.consumibles.push(res.id);
+    else if (res.kind === 'dinero') this.dinero += res.amount;
+    else if (res.kind === 'habilidad') {
+      // A un cocinero al azar, una habilidad que pueda tener.
+      const members = [...this.members.values()];
+      const m = members[Math.floor(Math.random() * members.length)];
+      const offer = m ? rollPerkOffer(m.perks, m.roles, this.modo === 1 || this.estilo === 'libre') : [];
+      if (m && offer.length) {
+        m.perks.push(offer[0]);
+        text = `¡${m.name} aprende ${getPerk(offer[0])?.name ?? offer[0]}!`;
+      } else text = 'Una habilidad… que ya teníais toda. Mala suerte.';
+    }
+    this.broadcast('sorpresa', text);
   }
 
   /** Cuando todos están listos, a la sala (en solitario, a la cocina directamente). */
@@ -643,6 +689,8 @@ export class KitchenRoom extends Room {
       nivel: this.nivel,
       dinero: this.dinero,
       mejoras: this.mejoras,
+      consumibles: this.consumibles,
+      sorpresas: this.sorpresas,
       paused: this.pausedBy,
       estilo: this.estilo,
       juego: this.juego,

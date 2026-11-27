@@ -35,7 +35,9 @@
 //   'events'   SimEvent[], efectos y avisos
 //   'summary'  SummaryInfo, al acabar el turno
 //   'emote'    EmoteMessage: alguien ha hecho un gesto
-//   'bought'   UpgradeId: alguien ha comprado una mejora
+//   'bought'   id: alguien ha comprado algo en la tienda
+//   'sorpresa' string: lo que ha salido de la caja sorpresa
+//   'unlock'   HatId: (solo a quien la compra) ropa especial desbloqueada para siempre
 
 import type { Campaign } from './campaign';
 import type { Estilo } from './levels';
@@ -130,8 +132,11 @@ export interface RoomInfo {
   nivel: number;
   /** Dinero de la partida (se gasta en la tienda; se pierde al perder una ronda). */
   dinero: number;
-  /** Mejoras de la tienda compradas en esta partida. */
+  /** Mejoras de la tienda compradas en esta partida (también reformas y empleados). */
   mejoras: string[];
+  /** Consumibles pedidos para la próxima ronda y cajas sorpresa abiertas en la partida. */
+  consumibles: string[];
+  sorpresas: number;
   /** Quién ha pausado la ronda (null si no está en pausa). */
   paused: string | null;
   /** Modo de juego de la partida: rol (puestos) o libre (todos lo hacen todo, sin caja). */
@@ -192,6 +197,8 @@ export interface SummaryInfo {
   perkNext: boolean;
   /** Dinero que se suma a la partida con esta ronda (si se ha superado). */
   earnedRound: number;
+  /** Sueldos de los empleados que se han descontado de lo ganado. */
+  wages: number;
   /** Solo cuando se acaba la partida. */
   run: RunSummary | null;
 }

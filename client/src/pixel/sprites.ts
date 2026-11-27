@@ -79,6 +79,9 @@ const HEADWEAR: Record<HatId, { down: string[]; up: string[]; side: string[] }> 
   const cap = (brim: string) => ['................', '................', '................', '.....kkkkkk.....', '....kaaaaaak....', brim];
   const bandana = ['................', '................', '................', '.....kkkkkk.....', '....krrwrrrk....', '....krrrrwrk....'];
   const crown = ['................', '................', '....y..yy..y....', '....yy.yy.yy....', '....yyyyyyyy....', '....kYYYYYYk....'];
+  const topHat = ['.....kkkkkk.....', '.....knnnnk.....', '.....knnnnk.....', '.....krrrrk.....', '...kknnnnnnkk...', '....kkkkkkkk....'];
+  const viking = ['..w..........w..', '..ww.kkkkkk.ww..', '...wkggggggkw...', '...kggggggggk...', '...kgYgggYggk...', '....kkkkkkkk....'];
+  const golden = ['................', '.....kkkkkk.....', '....kyyyyyyk....', '...kyyyyyyyyk...', '...kyyyyyyyYk...', '....kYYYYYYk....'];
   const same = (rows: string[]) => ({ down: rows, up: rows, side: rows });
   return {
     gorro: same(CHEF_HAT),
@@ -87,6 +90,9 @@ const HEADWEAR: Record<HatId, { down: string[]; up: string[]; side: string[] }> 
     gorra: { down: cap('...kAAAAAAAAk...'), up: cap('....kAAAAAAk....'), side: cap('....kAAAAAAkkk..') },
     panuelo: { ...same(bandana), side: ['................', '................', '................', '.....kkkkkk.....', '...rkrrwrrrk....', '..r.krrrrwrk....'] },
     corona: same(crown),
+    copa: same(topHat),
+    vikingo: same(viking),
+    dorado: same(golden),
   };
 })();
 
@@ -273,7 +279,7 @@ export function drinkKey(flavor: Flavor): string {
 export function generateTextures(scene: Phaser.Scene): void {
   // Cocineros: 8 delantales x 6 accesorios x 3 direcciones x 2 pasos.
   CHEF_COLORS.forEach(([a, A], apron) => {
-    const pal = { ...BASE, h: '#5a3a22', a, A, r: '#e5483a', y: '#ffd23f', Y: '#e0a800' };
+    const pal = { ...BASE, h: '#5a3a22', a, A, r: '#e5483a', y: '#ffd23f', Y: '#e0a800', n: '#33333d' };
     for (const { id: hat } of HATS) {
       const head = HEADWEAR[hat];
       const look = { apron, hat };

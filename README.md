@@ -208,7 +208,8 @@ Cada día tiene tres partes:
      ayudante (10, patatas y bebidas un 25 % antes), repartidor (14, pedidos a domicilio al cerrar según la reputación,
      un 20 % más caros y con ingredientes de la despensa) y encargado (12, la despensa un 20 % más barata).
    - **Local**: mejoras permanentes de **cocina** (tercera plancha, plancha de hierro, freidora industrial, dispensador,
-     extintor, cámara frigorífica que alarga la caducidad un día) y **decoración** (terraza, tarro de propinas, plantas,
+     extintor, cámara frigorífica que alarga la caducidad un día, y las reformas de El Barrio: ampliación y gran
+     cocina) y **decoración** (terraza, tarro de propinas, plantas,
      cuadros, música, neón y mesas, que atraen más clientes).
    - **Banco**: pedir préstamos (3 % de interés al día) y devolverlos.
    Cuando todos pulsan «¡Abrir!», empieza el servicio.
@@ -330,22 +331,25 @@ Están definidas en `shared/src/perks.ts`. Durante la ronda, las tuyas aparecen 
 
 ### Tienda
 
-Tras cada nivel superado (y tras elegir habilidad, si toca) se abre la **tienda**. El dinero que ganáis en cada
-ronda va a una **caja común de la partida**, y cualquiera puede comprar **mejoras del local** que valen para todos.
-Se sigue cuando todos pulsan «Listo». Al perder una ronda se pierden el dinero y las mejoras.
+Tras cada nivel superado (y tras elegir habilidad, si toca) se abre la **tienda**. El dinero que ganáis en cada ronda va
+a una **caja común de la partida**; cualquiera puede comprar y se sigue cuando todos pulsan «Listo». Al perder una ronda
+se pierden el dinero, las mejoras y los empleados (la ropa especial, no). Está por secciones:
 
-| Mejora | Efecto | Precio (1 jugador) |
-|---|---|---|
-| Tercera plancha | Una plancha más, debajo de la mesa de montaje | 45 |
-| Plancha de hierro | Toda la carne se hace un 20 % antes | 35 |
-| Freidora industrial | Todas las patatas se fríen un 30 % antes | 30 |
-| Dispensador doble | Todos los vasos se llenan un 40 % antes | 25 |
-| Terraza con sombrillas | Los clientes esperan un 15 % más | 40 |
-| Extintor | Lo quemado no cuesta dinero y todo tarda un 30 % más en quemarse | 25 |
-| Tarro de propinas | Las propinas valen el doble | 20 |
-| Reseñas de 5 estrellas | Cada ronda empieza con 15 de reputación más | 30 |
+- **Mejoras** del local: tercera plancha, plancha de hierro, freidora industrial, dispensador doble, terraza, extintor,
+  tarro de propinas y reseñas.
+- **Reformas**: la cocina crece. *Ampliación* (desde el nivel 4): más ancha, otra plancha, montaje largo, dos basuras y
+  6 huecos en la calle. *Gran cocina* (desde el 8): tres freidoras, dos islas de montaje y 7 huecos.
+- **Empleados** (desde el nivel 6), que se ven junto a su puesto, hacen su zona solos y cobran un sueldo de lo ganado
+  cada ronda: camarero (toma nota), freidor (echa patatas cuando las piden y no se queman), barman (llena los vasos de
+  los pedidos) y limpiador (quita lo quemado al momento; tirar a la basura sale gratis).
+- **Para la próxima ronda** (se pueden volver a comprar): café cargado (más velocidad), hilo musical (más paciencia),
+  seguro de cocina (3 fallos perdonados) y noche de propinas (propinas dobles).
+- **Caja sorpresa del proveedor**: una mejora, un consumible, una habilidad para alguien, dinero… o tomates podridos.
+  Cada caja cuesta 20 más que la anterior.
+- **Ropa especial**: sombrero de copa, casco vikingo y gorro de chef dorado, para quien la compra y **para siempre**
+  (se pone en «Tu cocinero»).
 
-Con más jugadores cuestan un 25 % más por jugador extra (también se gana más). Están en `shared/src/shop.ts`.
+Precios con un jugador; con más se encarecen un 25 % por jugador extra (la ropa, no). Todo está en `shared/src/shop.ts`.
 
 ### Fin de la partida y ranking
 

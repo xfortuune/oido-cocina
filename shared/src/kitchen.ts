@@ -124,7 +124,37 @@ export const PUERTO_MAP = [
   'WbcqlptkTWW',
 ];
 
-export type KitchenId = 'barrio' | 'puerto';
+/**
+ * Reformas de la cocina del barrio: «Ampliación» (más ancha, 3 planchas, montaje largo y dos basuras)
+ * y «Gran cocina» (aún más grande: 3 freidoras, dos islas de montaje y siete huecos en la calle).
+ */
+export const BARRIO2_MAP = [
+  '.............',
+  '.............',
+  '.............',
+  'WW#PPPP#WWWWW',
+  'G___________F',
+  'G____MMM____F',
+  'G____###____D',
+  'W___________N',
+  'W___________W',
+  'WbcqlptkT#T#W',
+];
+
+export const BARRIO3_MAP = [
+  '...............',
+  '...............',
+  '...............',
+  'WW#PPPPP#WWWWWW',
+  'G_____________F',
+  'G____MM_MM____F',
+  'G____##_##____F',
+  'W_____________D',
+  'W_____________N',
+  'WbcqlptkT###TWW',
+];
+
+export type KitchenId = 'barrio' | 'barrio2' | 'barrio3' | 'puerto';
 
 export interface KitchenDef {
   id: KitchenId;
@@ -133,10 +163,38 @@ export interface KitchenDef {
   spawns: { x: number; y: number }[];
   /** Casilla que se convierte en plancha con la mejora «Tercera plancha». */
   extraGrill: { x: number; y: number };
+  /** Posición x (centro) de cada hueco de la calle donde esperan los clientes. */
+  slots: number[];
 }
 
 export const KITCHENS: Record<KitchenId, KitchenDef> = {
-  barrio: { id: 'barrio', name: 'El Barrio', rows: KITCHEN_MAP, spawns: PLAYER_SPAWNS, extraGrill: { x: 5, y: 6 } },
+  barrio: { id: 'barrio', name: 'El Barrio', rows: KITCHEN_MAP, spawns: PLAYER_SPAWNS, extraGrill: { x: 5, y: 6 }, slots: CUSTOMER_SLOTS_X },
+  barrio2: {
+    id: 'barrio2',
+    name: 'El Barrio (ampliado)',
+    rows: BARRIO2_MAP,
+    spawns: [
+      { x: 2.5, y: 8.5 },
+      { x: 10.5, y: 8.5 },
+      { x: 2.5, y: 4.5 },
+      { x: 10.5, y: 4.5 },
+    ],
+    extraGrill: { x: 6, y: 6 },
+    slots: [1.5, 3.5, 5.5, 7.5, 9.5, 11.5],
+  },
+  barrio3: {
+    id: 'barrio3',
+    name: 'El Barrio (gran cocina)',
+    rows: BARRIO3_MAP,
+    spawns: [
+      { x: 2.5, y: 8.5 },
+      { x: 12.5, y: 8.5 },
+      { x: 2.5, y: 4.5 },
+      { x: 12.5, y: 4.5 },
+    ],
+    extraGrill: { x: 6, y: 6 },
+    slots: [1.5, 3.5, 5.5, 7.5, 9.5, 11.5, 13.5],
+  },
   puerto: {
     id: 'puerto',
     name: 'El Puerto',
@@ -148,8 +206,17 @@ export const KITCHENS: Record<KitchenId, KitchenDef> = {
       { x: 8.5, y: 4.5 },
     ],
     extraGrill: { x: 10, y: 6 },
+    slots: CUSTOMER_SLOTS_X,
   },
 };
+
+/** La cocina en la que se juega: El Puerto, o El Barrio con sus reformas. */
+export function kitchenFor(upgrades: readonly string[], base: KitchenId = 'barrio'): KitchenId {
+  if (base === 'puerto') return 'puerto';
+  if (upgrades.includes('reforma2')) return 'barrio3';
+  if (upgrades.includes('reforma1')) return 'barrio2';
+  return 'barrio';
+}
 
 export function getKitchen(id: string | undefined): KitchenDef {
   return KITCHENS[id as KitchenId] ?? KITCHENS.barrio;

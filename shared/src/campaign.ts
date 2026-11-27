@@ -100,6 +100,8 @@ export interface LocalUpgrade {
   kind: LocalKind;
   /** Decoración: cuánto más atrae al público (0,05 = 5 % más clientes). */
   appeal?: number;
+  /** Hace falta haber comprado esto antes. */
+  requires?: string;
 }
 
 /**
@@ -113,6 +115,8 @@ export const LOCAL_UPGRADES: LocalUpgrade[] = [
   { id: 'dispensador', name: 'Dispensador doble', description: 'Todos los vasos se llenan un 40 % antes.', price: 100, kind: 'cocina' },
   { id: 'extintor', name: 'Extintor', description: 'Lo quemado no cuesta dinero y tarda un 30 % más en quemarse.', price: 90, kind: 'cocina' },
   { id: 'camara', name: 'Cámara frigorífica', description: 'Lo que compréis dura un día más.', price: 150, kind: 'cocina' },
+  { id: 'reforma1', name: 'Reforma: ampliación', description: 'El Barrio crece: otra plancha, montaje largo, dos basuras y un hueco más en la calle.', price: 250, kind: 'cocina' },
+  { id: 'reforma2', name: 'Reforma: gran cocina', description: 'Tres freidoras, dos islas de montaje y siete huecos en la calle.', price: 500, kind: 'cocina', requires: 'reforma1' },
   { id: 'terraza', name: 'Terraza con sombrillas', description: 'Los clientes esperan un 15 % más.', price: 160, kind: 'deco' },
   { id: 'tarro', name: 'Tarro de propinas', description: 'Las propinas valen el doble.', price: 80, kind: 'deco' },
   { id: 'plantas', name: 'Plantas', description: 'Un poco de verde: 4 % más clientes.', price: 40, kind: 'deco', appeal: 0.04 },
@@ -150,6 +154,7 @@ export function fire(c: Campaign, id: string): boolean {
 export function buyLocalUpgrade(c: Campaign, id: string): boolean {
   const u = getLocalUpgrade(id);
   if (!u || c.upgrades.includes(id) || c.money < u.price) return false;
+  if (u.requires && !c.upgrades.includes(u.requires)) return false;
   c.money -= u.price;
   c.spentToday += u.price;
   c.upgrades.push(id);

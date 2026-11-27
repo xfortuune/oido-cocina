@@ -4,7 +4,6 @@
 // con instantáneas del servidor; cada cliente solo mueve a su propio cocinero.
 
 import {
-  CUSTOMER_SLOTS_X,
   getKitchen,
   parseKitchen,
   type KitchenId,
@@ -244,10 +243,16 @@ export class KitchenSim {
   stock: Record<string, number> | null = null;
   prices: { recipes: Record<string, number>; fries: number; drink: number } | null = null;
 
+  /** Fallos perdonados por el Seguro de cocina y cada cuánto trabajan los empleados. */
+  private insured = 0;
+  private staffTimer = 0;
+
   /** Fallos ya perdonados por Disculpa a tiempo en esta ronda, por jugador. */
   private forgiven: Record<string, number> = {};
   private nextId = 1;
   private spawns: { x: number; y: number }[];
+  /** Huecos de la calle (x del centro de cada uno). */
+  readonly slots: number[];
   /** Eventos de la ronda: cuándo (fracción de la ronda) y si ya se han avisado o empezado. */
   private incidentPlan: { kind: IncidentKind; at: number; warned: boolean; started: boolean }[] = [];
   incident: ActiveIncident | null = null;
@@ -272,6 +277,7 @@ export class KitchenSim {
     this.spawnTimer = 2;
     const def = getKitchen(map);
     this.spawns = def.spawns;
+    this.slots = def.slots;
     this.kitchen = parseKitchen(def.rows);
     if (upgrades.includes('plancha3')) {
       const t = this.kitchen.tiles[def.extraGrill.y][def.extraGrill.x];
@@ -423,7 +429,7 @@ export class KitchenSim {
       case 'trash':
         if (held) {
           p.holding = null;
-          const cost = CONFIG.trashCost * this.inspectionFactor();
+          const cost = this.upgrades.includes('emp_limpiador') ? 0 : CONFIG.trashCost * this.inspectionFactor();
           this.money -= cost;
           this.stats.trashed++;
           this.events.push({ type: 'trash', cost, x: t.x, y: t.y });
@@ -525,6 +531,11 @@ export class KitchenSim {
 
     if (this.moveOnTick) for (const p of this.players.values()) this.stepPlayer(p, dt);
     this.updateIncidents();
+    this.staffTimer -= dt;
+    if (this.staffTimer <= 0) {
+      this.staffTimer = 0.5;
+      this.autoStaff();
+    }
     this.cook(dt);
 
     for (const order of [...this.orders]) {
@@ -545,7 +556,7 @@ export class KitchenSim {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       // Con el autobús de turistas se llenan todos los huecos de la calle.
-      const limit = this.incident?.kind === 'autobus' ? CUSTOMER_SLOTS_X.length : this.params.maxOrders;
+      const limit = this.incident?.kind === 'autobus' ? this.slots.length : this.params.maxOrders;
       if (this.orders.length < limit || this.pendingSpecial) this.spawnOrder();
       // Autobús de turistas: los clientes llegan casi seguidos.
       this.spawnTimer = lerp(this.params.spawnStart, this.params.spawnEnd, this.progress) * (this.incident?.kind === 'autobus' ? 0.35 : 1);
@@ -691,6 +702,8 @@ export class KitchenSim {
           this.events.push({ type: 'cooked', x, y });
         }
       } else if (item.kind === 'food' || item.kind === 'fries') {
+        // El freidor vigila la freidora: sus patatas no se queman.
+        if (!grill && this.upgrades.includes('emp_freidor')) continue;
         st.overcook += dt;
         if (st.overcook >= burnTime) {
           const what = grill ? 'carne' : 'patatas';
@@ -699,6 +712,8 @@ export class KitchenSim {
           this.money -= cost;
           this.stats.burnt++;
           this.events.push({ type: 'burnt', x, y, what, cost });
+          // El limpiador lo retira al momento.
+          if (this.upgrades.includes('emp_limpiador')) st.item = null;
         }
       }
     }
@@ -726,6 +741,13 @@ export class KitchenSim {
     }
 
     if (!order) {
+      // Seguro de cocina: los 3 primeros fallos de la ronda no cuentan (para todo el equipo).
+      if (this.upgrades.includes('c_seguro') && this.insured < 3) {
+        this.insured++;
+        this.stats.wrong++;
+        this.events.push({ type: 'wrong', penalty: 0, x: at.x, y: at.y });
+        return true;
+      }
       // Disculpa a tiempo: los primeros fallos de la ronda (uno por cada vez que se cogió) no cuestan nada.
       const p = this.players.get(by);
       const forgiven = this.forgiven[by] ?? 0;
@@ -784,7 +806,9 @@ export class KitchenSim {
     const mult = order.special ? 3 : 1;
     const earned = Math.round(price * (0.6 + 0.4 * ratio)) * mult;
     if (order.special === 'critico' && perfect) this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 6);
-    const tip = perfect ? Math.ceil(price * 0.3) * (this.upgrades.includes('tarro') ? 2 : 1) : 0;
+    const tip = perfect
+      ? Math.ceil(price * 0.3) * (this.upgrades.includes('tarro') ? 2 : 1) * (this.upgrades.includes('c_propinas') ? 2 : 1)
+      : 0;
 
     this.orders = this.orders.filter((o) => o !== order);
     this.money += earned + tip;
@@ -801,7 +825,7 @@ export class KitchenSim {
 
   private spawnOrder(): void {
     const used = new Set(this.orders.map((o) => o.slot));
-    const free = CUSTOMER_SLOTS_X.map((_, i) => i).filter((i) => !used.has(i));
+    const free = this.slots.map((_, i) => i).filter((i) => !used.has(i));
     if (free.length === 0) return;
     const slot = free[Math.floor(this.random() * free.length)];
     if (this.pendingSpecial) {
@@ -824,6 +848,7 @@ export class KitchenSim {
       (CONFIG.patienceBase + layers * CONFIG.patiencePerLayer + sides * CONFIG.patiencePerSide) *
       this.params.patience *
       (this.upgrades.includes('terraza') ? 1.15 : 1) *
+      (this.upgrades.includes('c_hilo') ? 1.25 : 1) *
       lerp(1, 0.85, this.progress);
     const order: Order = {
       id: this.nextId++,
@@ -840,6 +865,57 @@ export class KitchenSim {
     };
     this.orders.push(order);
     this.events.push({ type: 'newOrder', orderId: order.id });
+  }
+
+  // ---------------------------------------------------------------- empleados del Desafío
+
+  /** Lo que hay de un tipo por la cocina: en fogones y máquinas, en las manos o en las encimeras. */
+  private countItems(match: (it: Item) => boolean): number {
+    let n = 0;
+    for (const st of this.stations.values()) if (st.item && match(st.item)) n++;
+    for (const p of this.players.values()) if (p.holding && match(p.holding)) n++;
+    return n;
+  }
+
+  /** El freidor echa patatas y el barman llena vasos cuando los pedidos los necesitan. */
+  private autoStaff(): void {
+    const pending = this.orders.filter((o) => o.taken);
+    if (this.upgrades.includes('emp_freidor')) {
+      const need = pending.filter((o) => o.fries && !o.done.fries).length;
+      const have = this.countItems((it) => it.kind === 'fries' || it.kind === 'potatoes');
+      if (need > have) {
+        const fryer = this.freeStation('fryer');
+        if (fryer && this.take('patatas', 'personal')) {
+          fryer.item = { kind: 'potatoes', cook: 0 };
+          fryer.overcook = 0;
+          fryer.rate = this.upgrades.includes('freidora') ? 1.3 : 1;
+          fryer.burnRate = 1;
+        }
+      }
+    }
+    if (this.upgrades.includes('emp_barman') && this.incident?.kind !== 'apagon') {
+      for (const flavor of ['cola', 'naranja'] as Flavor[]) {
+        const need = pending.filter((o) => o.drink === flavor && !o.done.drink).length;
+        const have = this.countItems((it) => it.kind === 'drink' && it.flavor === flavor);
+        if (need <= have) continue;
+        const machine = this.freeStation('drinks', flavor);
+        if (machine && this.take('refresco', 'personal')) {
+          machine.item = { kind: 'drink', flavor, fill: 0 };
+          machine.rate = this.upgrades.includes('dispensador') ? 1.4 : 1;
+        }
+      }
+    }
+  }
+
+  /** Un fogón o máquina vacío (y no averiado) de este tipo. */
+  private freeStation(kind: TileKind, flavor?: Flavor): Station | undefined {
+    for (const [k, st] of this.stations) {
+      if (st.item || this.incident?.station === k) continue;
+      const [x, y] = k.split(',').map(Number);
+      const t = this.tile(x, y);
+      if (t?.kind === kind && (!flavor || t.flavor === flavor)) return st;
+    }
+    return undefined;
   }
 
   // ---------------------------------------------------------------- eventos aleatorios
@@ -939,7 +1015,8 @@ export class KitchenSim {
     const maxPatience =
       (CONFIG.patienceBase + layers * CONFIG.patiencePerLayer + sides * CONFIG.patiencePerSide) *
       this.params.patience *
-      (kind === 'critico' ? 0.6 : 1.5);
+      (kind === 'critico' ? 0.6 : 1.5) *
+      (this.upgrades.includes('c_hilo') ? 1.25 : 1);
     const order: Order = {
       id: this.nextId++,
       recipeId,

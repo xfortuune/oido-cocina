@@ -69,6 +69,12 @@ class Net extends Phaser.Events.EventEmitter {
     });
     room.onMessage('events', (events: SimEvent[]) => this.emit('events', events));
     room.onMessage('bought', (id: string) => this.emit('bought', id));
+    room.onMessage('sorpresa', (text: string) => this.emit('sorpresa', text));
+    // Ropa especial comprada en la tienda: se guarda para siempre en este navegador.
+    room.onMessage('unlock', (hat: string) => {
+      saveOwnedHat(hat);
+      this.emit('unlock', hat);
+    });
     room.onMessage('emote', (msg: EmoteMessage) => this.emit('emote', msg));
     room.onMessage('summary', (summary: SummaryInfo) => {
       this.summary = summary;
@@ -211,6 +217,26 @@ export function savedLook(): ChefLook {
 export function saveLook(look: ChefLook): void {
   try {
     localStorage.setItem('horaPunta.look', JSON.stringify(look));
+  } catch {
+    // sin almacenamiento
+  }
+}
+
+/** Gorros especiales comprados en la tienda del Desafío (para siempre). */
+export function ownedHats(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem('horaPunta.armario') ?? '[]');
+    return Array.isArray(raw) ? raw.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOwnedHat(hat: string): void {
+  try {
+    const all = new Set(ownedHats());
+    all.add(hat);
+    localStorage.setItem('horaPunta.armario', JSON.stringify([...all]));
   } catch {
     // sin almacenamiento
   }

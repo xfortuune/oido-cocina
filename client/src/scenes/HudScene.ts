@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CUSTOMER_SLOTS_X, EMOTES, INCIDENTS, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
+import { EMOTES, INCIDENTS, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { addSoundToggle } from '../ui/SoundToggle';
 import { Button } from '../ui/Button';
@@ -699,7 +699,7 @@ export class HudScene extends Phaser.Scene {
     const L = this.L;
     const pad = 6;
     const inner: Rect = { x: L.tickets.x + 8, y: L.tickets.y + 7, w: L.tickets.w - 16, h: L.tickets.h - 16 };
-    const n = CUSTOMER_SLOTS_X.length;
+    const n = this.kitchen.sim.slots.length;
     const w = Math.min((inner.w - pad * (n - 1)) / n, 150);
 
     for (const [id, view] of this.tickets) {
@@ -792,7 +792,7 @@ export class HudScene extends Phaser.Scene {
   private onSimEvent(ev: SimEvent): void {
     switch (ev.type) {
       case 'served': {
-        const at = this.kitchen.worldToScreen(CUSTOMER_SLOTS_X[ev.slot], 2);
+        const at = this.kitchen.worldToScreen(this.kitchen.sim.slots[ev.slot] ?? 0, 2);
         this.popup(at.x, at.y, `+${ev.earned}`, '#7dff8a');
         if (ev.perfect) this.popup(at.x, at.y + 22, `¡Perfecto! +${ev.tip}`, '#ffc93c', 150);
         break;
@@ -803,7 +803,7 @@ export class HudScene extends Phaser.Scene {
         break;
       }
       case 'lost': {
-        const at = this.kitchen.worldToScreen(CUSTOMER_SLOTS_X[ev.slot], 2);
+        const at = this.kitchen.worldToScreen(this.kitchen.sim.slots[ev.slot] ?? 0, 2);
         this.popup(at.x, at.y, `¡Se ha ido! -${ev.penalty}★`, '#ff6b5b');
         break;
       }
@@ -824,7 +824,7 @@ export class HudScene extends Phaser.Scene {
         break;
       }
       case 'taken': {
-        const at = this.kitchen.worldToScreen(CUSTOMER_SLOTS_X[ev.slot], 2);
+        const at = this.kitchen.worldToScreen(this.kitchen.sim.slots[ev.slot] ?? 0, 2);
         this.popup(at.x, at.y, '¡Nota tomada!', '#ffffff');
         break;
       }
@@ -890,7 +890,7 @@ export class HudScene extends Phaser.Scene {
         }
         break;
       case 'part': {
-        const at = this.kitchen.worldToScreen(CUSTOMER_SLOTS_X[ev.slot], 2);
+        const at = this.kitchen.worldToScreen(this.kitchen.sim.slots[ev.slot] ?? 0, 2);
         const label = ev.part === 'burger' ? 'Hamburguesa' : ev.part === 'fries' ? 'Patatas' : 'Bebida';
         this.popup(at.x, at.y + 20, `${label} ✓`, '#ffffff');
         break;

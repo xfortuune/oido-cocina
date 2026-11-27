@@ -1,12 +1,12 @@
 // Personalización del cocinero: color del delantal y un accesorio.
 // Los accesorios se desbloquean con el récord (niveles superados) guardado en el navegador.
 
-export type HatId = 'gorro' | 'gorra' | 'panuelo' | 'bigote' | 'gafas' | 'corona';
+export type HatId = 'gorro' | 'gorra' | 'panuelo' | 'bigote' | 'gafas' | 'corona' | 'copa' | 'vikingo' | 'dorado';
 
 export interface Hat {
   id: HatId;
   name: string;
-  /** Niveles superados (récord) que hacen falta para usarlo. */
+  /** Niveles superados (récord) que hacen falta para usarlo; -1: se compra en la tienda del Desafío. */
   unlock: number;
 }
 
@@ -17,6 +17,9 @@ export const HATS: Hat[] = [
   { id: 'bigote', name: 'Bigote', unlock: 6 },
   { id: 'gafas', name: 'Gafas de sol', unlock: 10 },
   { id: 'corona', name: 'Corona', unlock: 20 },
+  { id: 'copa', name: 'Sombrero de copa', unlock: -1 },
+  { id: 'vikingo', name: 'Casco vikingo', unlock: -1 },
+  { id: 'dorado', name: 'Gorro dorado', unlock: -1 },
 ];
 
 /** Número de colores de delantal (los dibuja el cliente). */

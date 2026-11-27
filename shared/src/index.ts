@@ -9,3 +9,4 @@ export * from './looks';
 export * from './campaign';
 export * from './progress';
 export * from './incidents';
+export * from './weather';

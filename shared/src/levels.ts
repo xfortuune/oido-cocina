@@ -37,6 +37,9 @@ export interface LevelParams {
   goal: number;
   /** Eventos aleatorios en la ronda (incidents.ts). */
   incidents: number;
+  /** Campaña: probabilidad propia de patatas y de bebida (por el tiempo); si no, `sideChance`. */
+  friesChance?: number;
+  drinkChance?: number;
 }
 
 /** Cuántos clientes más llegan según el número de cocineros. */

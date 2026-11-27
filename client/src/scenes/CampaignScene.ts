@@ -42,6 +42,15 @@ import {
   STOCK,
   stockCount,
   weekday,
+  conditions,
+  dayLabel,
+  holidayOf,
+  qualityCount,
+  qualityPackPrice,
+  qualityShare,
+  QUALITY,
+  WEATHER,
+  weatherOf,
   type Campaign,
   type DayReport,
   type RoomInfo,
@@ -276,8 +285,14 @@ export class CampaignScene extends Phaser.Scene {
     const params = serviceParams(c, players, info.estilo);
     const expected = expectedCustomers(params);
     const burgers = burgersPossible(c);
+    const w = conditions(c);
+    const q = qualityShare(c);
     const lines: [string, string][] = [
+      ['Hoy', dayLabel(c.day)],
+      ['', w.holiday ? `¡Festivo! Más gente y propinas ×${w.tips}` : WEATHER[w.weather].hint],
+      ['Mañana', `${WEATHER[weatherOf(c.day + 1)].name}${holidayOf(c.day + 1) ? ` · ${holidayOf(c.day + 1)}` : ''}`],
       ['Clientes previstos', `unos ${expected}`],
+      ...(q > 0 ? ([['Despensa de calidad', `${Math.round(q * 100)} % · propinas +${Math.round(QUALITY.tips * q * 100)} %`]] as [string, string][]) : []),
       ['Hamburguesas que da la despensa', `${burgers}`],
       ['Capítulo', currentChapter(c) ? `${c.chapter}: ${currentChapter(c)!.title}` : 'todos completados'],
       ...(c.contestToday
@@ -296,6 +311,13 @@ export class CampaignScene extends Phaser.Scene {
       lines.push(['Ayer', `${prev.served} servidos · ${result >= 0 ? '+' : ''}${result}`]);
     }
     for (const [label, value] of lines) {
+      if (!label) {
+        // Una nota bajo la línea anterior (lo que trae el tiempo de hoy).
+        const n = txt(this, a.x + a.w, y - fs * 0.35, value, fs * 0.75, { color: '#6b5a4a' }).setOrigin(1, 0);
+        if (n.width > a.w) n.setScale(a.w / n.width);
+        y += fs * 1.2;
+        continue;
+      }
       txt(this, a.x, y, label, fs * 0.85).setAlpha(0.65);
       const v = txt(this, a.x + a.w, y, value, fs).setOrigin(1, 0);
       if (v.width > a.w * 0.55) v.setScale((a.w * 0.55) / v.width);
@@ -403,18 +425,36 @@ export class CampaignScene extends Phaser.Scene {
       const y = a.y + i * rowH;
       const cy = y + rowH / 2;
       this.add.image(a.x + 14, cy, STOCK_ICON[st.id]).setScale(Math.max(1, Math.round(rowH / 22)));
-      txt(this, a.x + 34, cy - fs * 0.65, st.name, fs).setOrigin(0, 0.5);
+      const nameT = txt(this, a.x + 34, cy - fs * 0.65, st.name, fs).setOrigin(0, 0.5);
+      const bw = 86 * s;
+      const textW = a.w - 2 * bw - 46;
       const have = stockCount(c, st.id);
       const exp = expiringToday(c, st.id);
-      txt(this, a.x + 34, cy + fs * 0.6, `Tienes ${have}${exp ? ` · caducan hoy ${exp}` : ''} · dura ${st.life} ${st.life === 1 ? 'día' : 'días'}`, fs * 0.72, {
+      const qn = qualityCount(c, st.id);
+      const sub = txt(this, a.x + 34, cy + fs * 0.6, `Tienes ${have}${qn ? ` (${qn} cal.)` : ''}${exp ? ` · caducan hoy ${exp}` : ''} · ${st.life} ${st.life === 1 ? 'día' : 'días'}`, fs * 0.72, {
         color: exp ? '#c0392b' : '#6b5a4a',
       }).setOrigin(0, 0.5);
+      if (sub.width > textW) sub.setScale(textW / sub.width);
       const price = packPriceToday(c, st.id);
       const f = priceFactor(c.day, st.id);
       const trend = f > 1.08 ? 'caro hoy' : f < 0.92 ? 'barato hoy' : '';
-      if (trend) txt(this, a.x + a.w - 118 * s, cy, trend, fs * 0.7, { color: f > 1 ? '#c0392b' : '#2e8a34' }).setOrigin(1, 0.5);
-      new Button(this, a.x + a.w - 54 * s, cy, {
-        w: 106 * s,
+      if (trend) txt(this, nameT.x + nameT.width + 8, nameT.y, trend, fs * 0.7, { color: f > 1 ? '#c0392b' : '#2e8a34' }).setOrigin(0, 0.5);
+      // Proveedor de calidad: más caro, pero más propinas y reputación.
+      const qp = qualityPackPrice(c, st.id);
+      new Button(this, a.x + a.w - bw / 2, cy, {
+        w: bw,
+        h: rowH * 0.72,
+        color: c.money >= qp ? 0xb8860b : 0x9a8a7a,
+        label: `Calidad ${qp}`,
+        fontSize: fs * 0.85,
+        onPress: () => {
+          if (c.money < qp) return;
+          audio.sfx('coin');
+          net.campaign('c:buyq', st.id);
+        },
+      });
+      new Button(this, a.x + a.w - bw * 1.5 - 6, cy, {
+        w: bw,
         h: rowH * 0.72,
         color: c.money >= price ? COLORS.green : 0x9a8a7a,
         label: `+${st.pack} · ${price}`,
@@ -427,6 +467,13 @@ export class CampaignScene extends Phaser.Scene {
       });
       if (i < STOCK.length - 1) this.add.rectangle(a.x, y + rowH, a.w, 1, 0x2b1d14, 0.12).setOrigin(0);
     });
+    const ny = a.y + STOCK.length * rowH + 10 * s;
+    if (ny < a.y + a.h - 30 * s) {
+      txt(this, a.x, ny, `Proveedor de calidad: más caro, pero cuanta más parte de la despensa sea de calidad, más propinas (hasta +${Math.round(QUALITY.tips * 100)} %) y más reputación al cerrar (hasta +${QUALITY.rep}).`, fs * 0.8, {
+        color: '#8a6d1a',
+        wordWrap: { width: a.w },
+      });
+    }
   }
 
   // ---------------------------------------------------------------- pestaña: carta
@@ -837,6 +884,10 @@ export class CampaignScene extends Phaser.Scene {
 
   private buildReport(c: Campaign, r: DayReport, W: number, H: number, s: number): void {
     let y = this.header(c, W, s, r.bankrupt ? '¡Bancarrota!' : `Cierre del día ${r.day}`);
+    if (r.weather) {
+      txt(this, W / 2, y - 4 * s, r.weather, 13 * s, { color: '#fff4dcbb' }).setOrigin(0.5, 0);
+      y += 18 * s;
+    }
     const boxW = Math.min(W - 16, 520);
     const x0 = W / 2 - boxW / 2;
     const fs = clamp(15 * s, 12, 18);
@@ -873,7 +924,11 @@ export class CampaignScene extends Phaser.Scene {
       ly += lineH;
     });
     const repDiff = r.repAfter - r.repBefore;
-    txt(this, x0 + 14, ly, `Reputación ${r.repBefore} → ${r.repAfter}${r.repFromPrices ? ` (precios ${r.repFromPrices > 0 ? '+' : ''}${r.repFromPrices})` : ''}`, fs * 0.9, {
+    const repNotes = [
+      r.repFromPrices ? `precios ${r.repFromPrices > 0 ? '+' : ''}${r.repFromPrices}` : '',
+      r.repFromQuality ? `calidad +${r.repFromQuality}` : '',
+    ].filter(Boolean);
+    txt(this, x0 + 14, ly, `Reputación ${r.repBefore} → ${r.repAfter}${repNotes.length ? ` (${repNotes.join(', ')})` : ''}`, fs * 0.9, {
       color: repDiff >= 0 ? '#2e8a34' : '#c0392b',
     });
     ly += lineH;

@@ -182,6 +182,14 @@ await solo.room.leave();
   check(c.menu.find((m) => m.recipeId === 'chispa').price === 8, 'Gema sube La Chispa a 8');
   check(c.learnedRecipes.includes('jardin') && c.menu.find((m) => m.recipeId === 'jardin').on, 'Aprenden El Jardín y entra en la carta');
   check(c.debt === 150, `Piden un préstamo de 50 (deuda ${c.debt})`);
+  {
+    const before = c.money;
+    g1.room.send('c:buyq', 'queso');
+    await wait(300);
+    c = g1.info.campana;
+    const q = c.stock.queso.filter((l) => l.q).reduce((n, l) => n + l.qty, 0);
+    check(q === 10 && before - c.money >= 5, `Compran queso al proveedor de calidad (${q} de calidad, ${before - c.money} monedas)`);
+  }
   check(c.staff.includes('camarero') && c.upgrades.includes('plantas'), 'Contratan un camarero y ponen plantas');
   g1.room.send('ready');
   await wait(200);
@@ -198,6 +206,7 @@ await solo.room.leave();
   while (g1.info.phase !== 'cierre') await wait(300);
   c = g1.info.campana;
   const r = c.lastReport;
+  check(r?.weather === 'Primavera · Sol' && r.repFromQuality >= 0, `El cierre dice el tiempo (${r?.weather}) y la calidad (+${r?.repFromQuality})`);
   check(r?.day === 1 && c.day === 2 && r.rent === 10 && r.wages === 12, `Cierre del día 1: alquiler ${r?.rent}, sueldos ${r?.wages}, intereses ${r?.interest}, dinero ${r?.moneyAfter}`);
   check(c.stock.carne.reduce((n, l) => n + l.qty, 0) === carne1 - 1, 'La carne usada se descuenta de la despensa');
   g1.room.send('c:next');

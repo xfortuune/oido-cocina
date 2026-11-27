@@ -40,6 +40,8 @@ import {
   hasStaff,
   hire,
   serviceUpgrades,
+  serviceTipMult,
+  qualityShare,
   closeDay,
   learnRecipe,
   newCampaign,
@@ -113,6 +115,8 @@ export class KitchenRoom extends Room {
   /** Campaña (restaurante del grupo, con gestión y días) o Desafío (20 niveles). */
   private juego: Juego = 'desafio';
   private campana: Campaign | null = null;
+  /** Parte de la despensa de calidad al abrir el servicio de hoy. */
+  private serviceQuality = 0;
 
   onCreate(options: JoinOptions): void {
     this.sala = String(options.sala ?? 'local');
@@ -394,6 +398,7 @@ export class KitchenRoom extends Room {
       this.broadcastRoom();
     };
     this.onMessage('c:buy', (_cl, id: string) => manage((c) => buyStock(c, String(id) as StockId)));
+    this.onMessage('c:buyq', (_cl, id: string) => manage((c) => buyStock(c, String(id) as StockId, true)));
     this.onMessage('c:price', (_cl, m: { id: string; price: number }) => manage((c) => setPrice(c, String(m?.id), Number(m?.price))));
     this.onMessage('c:menu', (_cl, m: { id: string; on: boolean }) => manage((c) => setMenuOn(c, String(m?.id), !!m?.on)));
     this.onMessage('c:learn', (_cl, id: string) => manage((c) => learnRecipe(c, String(id))));
@@ -448,6 +453,10 @@ export class KitchenRoom extends Room {
     sim.stock = contest ? null : stockForService(c);
     sim.prices = contest ? null : servicePrices(c);
     sim.reputation = Math.max(10, c.reputation);
+    if (!contest) {
+      sim.tipMult = serviceTipMult(c);
+      this.serviceQuality = qualityShare(c);
+    }
     if (this.turnDuration) sim.turnDuration = this.turnDuration;
     for (const m of this.members.values()) sim.addPlayer(m.id, m.name, m.color, m.roles, m.perks, m.look);
     for (const m of this.members.values()) m.ready = false;
@@ -472,6 +481,7 @@ export class KitchenRoom extends Room {
       tips: contest ? 0 : sim.stats.tips,
       reputation: Math.max(0, sim.reputation),
       remaining: contest ? stockForService(c) : (sim.stock ?? {}),
+      quality: contest ? 0 : this.serviceQuality,
     });
     // Experiencia: lo que ha aportado cada uno (como el MVP), con un mínimo por estar.
     const xp = [...this.members.values()].map((m) => {

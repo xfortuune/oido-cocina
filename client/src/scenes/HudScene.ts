@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { EMOTES, INCIDENTS, orderLayers, streakMult, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
+import { WEATHER, weatherOf, holidayOf, EMOTES, INCIDENTS, orderLayers, streakMult, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { addSoundToggle } from '../ui/SoundToggle';
 import { Button } from '../ui/Button';
@@ -125,7 +125,7 @@ export class HudScene extends Phaser.Scene {
     } else if (sim.day > 0) {
       // Campaña: no hay objetivo, el dinero es lo que cuenta.
       this.hud.served.setText(String(sim.stats.served)).setColor('#fff4dc');
-      this.levelText?.setText(`Día ${sim.day} · ${weekday(sim.day)}`);
+      this.levelText?.setText(`Día ${sim.day} · ${weekday(sim.day)} · ${WEATHER[weatherOf(sim.day)].name}${holidayOf(sim.day) ? ' · ¡Festivo!' : ''}`);
     } else {
       const reached = sim.stats.served >= sim.goal;
       this.hud.served.setText(`${sim.stats.served}/${sim.goal}`).setColor(reached ? '#7ee081' : '#fff4dc');

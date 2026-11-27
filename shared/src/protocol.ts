@@ -15,6 +15,7 @@
 //
 // Solo en la campaña (fase 'gestion'):
 //   'c:buy'    StockId: comprar un paquete de ingredientes
+//   'c:buyq'   StockId: comprar un paquete al proveedor de calidad (más caro; más propinas y reputación)
 //   'c:price'  { id, price }: precio de una receta o de 'fries' / 'drink'
 //   'c:menu'   { id, on }: quitar o poner una receta en la carta
 //   'c:learn'  recipeId: aprender (comprar) una receta

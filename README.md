@@ -252,6 +252,30 @@ los clientes que se atiende). Con los números actuales, atendiendo a 3 de cada 
 y el ranking; sin volumen se borrarían en cada despliegue.
 
 
+### Tiempo, estaciones y festivos
+
+Cada estación dura dos semanas (primavera, verano, otoño, invierno) y cada día tiene su tiempo, que se ve en «Hoy»
+junto a la previsión de mañana, en la calle durante el servicio (lluvia, nieve, calor) y en el cierre:
+
+| Tiempo  | Efecto |
+|---------|--------|
+| Sol     | algo más de gente y bebidas; con terraza, un 10 % más |
+| Nublado | un día normal |
+| Lluvia  | 20 % menos gente, pero los repartos a domicilio ×1,75 |
+| Calor   | todo el mundo pide bebida (×1,7) y menos patatas |
+| Frío    | más patatas, pocos refrescos, más repartos |
+| Nieve   | casi nadie sale (−35 %); los repartos ×2 |
+
+En verano hay turistas (+10 %). El sábado de la segunda semana de cada estación es festivo (Fiestas del barrio,
+Noche de San Juan, Castañada, Nochevieja): un 35 % más de gente, propinas ×1,5 y banderines en la calle.
+Todo sale del número de día (`shared/src/weather.ts`), así que es igual para todo el grupo.
+
+### Proveedor de calidad
+
+En la despensa cada ingrediente se puede comprar normal o **de calidad** (un 60 % más caro). Cuanta más parte de la
+despensa sea de calidad al abrir, más propinas (hasta +60 %) y más reputación al cerrar (hasta +3). Compensa en días
+de mucha gente o festivos; con lluvia, quizá no.
+
 ## Cómo se juega
 
 ### Modos

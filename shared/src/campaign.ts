@@ -5,6 +5,7 @@
 import type { KitchenId } from './kitchen';
 import { levelParams, type Estilo, type LevelParams } from './levels';
 import { getRecipe, RECIPES } from './recipes';
+import { dayConditions, dayLabel, type DayConditions } from './weather';
 
 export type StockId = 'pan' | 'carne' | 'queso' | 'lechuga' | 'tomate' | 'bacon' | 'patatas' | 'refresco';
 
@@ -50,6 +51,8 @@ export const CRATE_STOCK: Record<string, StockId> = {
 export interface Lot {
   qty: number;
   expires: number;
+  /** Del proveedor de calidad. */
+  q?: boolean;
 }
 
 export interface MenuItem {
@@ -226,6 +229,9 @@ export interface DayReport {
   repAfter: number;
   /** Reputación ganada o perdida por los precios de la carta. */
   repFromPrices: number;
+  repFromQuality?: number;
+  /** Tiempo del día, p. ej. «Otoño · Lluvia». */
+  weather?: string;
   moneyAfter: number;
   debtAfter: number;
   bankrupt: boolean;
@@ -364,17 +370,43 @@ export function expiringToday(c: Campaign, id: StockId): number {
   return c.stock[id].filter((l) => l.expires <= c.day).reduce((n, l) => n + l.qty, 0);
 }
 
-export function buyStock(c: Campaign, id: StockId): boolean {
+/**
+ * Proveedor de calidad: el mismo paquete, más caro, pero los clientes lo notan. Cuanta más parte de la despensa
+ * sea de calidad al abrir, más propinas (hasta +60 %) y más reputación al cerrar (hasta +3).
+ */
+export const QUALITY = { price: 1.6, tips: 0.6, rep: 3 };
+
+export function qualityPackPrice(c: Campaign, id: StockId): number {
+  return Math.round(packPriceToday(c, id) * QUALITY.price);
+}
+
+export function buyStock(c: Campaign, id: StockId, premium = false): boolean {
   const s = getStock(id);
   if (!s) return false;
-  const price = packPriceToday(c, id);
+  const price = premium ? qualityPackPrice(c, id) : packPriceToday(c, id);
   if (c.money < price) return false;
   c.money -= price;
   c.spentToday += price;
   // Con cámara frigorífica, todo dura un día más.
   const life = s.life + (c.upgrades.includes('camara') ? 1 : 0);
-  c.stock[id].push({ qty: s.pack, expires: c.day + life - 1 });
+  c.stock[id].push({ qty: s.pack, expires: c.day + life - 1, ...(premium ? { q: true } : {}) });
   return true;
+}
+
+/** Unidades de calidad que hay de un ingrediente. */
+export function qualityCount(c: Campaign, id: StockId): number {
+  return c.stock[id].filter((l) => l.q).reduce((n, l) => n + l.qty, 0);
+}
+
+/** Parte de la despensa (0-1) que es de calidad. */
+export function qualityShare(c: Campaign): number {
+  let all = 0;
+  let q = 0;
+  for (const s of STOCK) {
+    all += stockCount(c, s.id);
+    q += qualityCount(c, s.id);
+  }
+  return all ? q / all : 0;
 }
 
 /** Lo que se lleva la cocina al empezar el servicio (cajas por contenido). */
@@ -464,7 +496,14 @@ export function demandFactor(c: Campaign): number {
   const decor = 1 + decorAppeal(c);
   // El Puerto tiene más paso de gente; el rival, si tiene más fama, se lleva clientes.
   const local = c.localHoy === 'puerto' ? PUERTO.demand : 1;
-  return Math.max(0.3, Math.min(3, appeal * variety * rep * decor * local * rivalFactor(c) * weekdayFactor(c.day)));
+  // El tiempo, la estación y los festivos (weather.ts).
+  const weather = conditions(c).demand;
+  return Math.max(0.3, Math.min(3, appeal * variety * rep * decor * local * weather * rivalFactor(c) * weekdayFactor(c.day)));
+}
+
+/** Tiempo y estación de hoy. */
+export function conditions(c: Campaign): DayConditions {
+  return dayConditions(c.day, c.upgrades.includes('terraza'));
 }
 
 // ---------------------------------------------------------------- segundo local y rival
@@ -518,13 +557,17 @@ export function serviceParams(c: Campaign, players: number, estilo: Estilo): Lev
   // Patatas y bebida caras se piden menos.
   const sideAppeal = (priceAppeal(SIDE_BASE.fries, c.sides.fries) + priceAppeal(SIDE_BASE.drink, c.sides.drink)) / 2;
   // Con camarero, los clientes esperan un 10 % más.
+  const w = conditions(c);
+  const side = Math.min(0.85, Math.max(p.sideChance, 0.2) * sideAppeal);
   const params: LevelParams = {
     ...p,
-    patience: p.patience * (hasStaff(c, 'camarero') ? 1.1 : 1),
+    patience: p.patience * (hasStaff(c, 'camarero') ? 1.1 : 1) * w.patience,
     duration: Math.max(120, p.duration),
     spawnStart: p.spawnStart / d,
     spawnEnd: p.spawnEnd / d,
-    sideChance: Math.min(0.85, Math.max(p.sideChance, 0.2) * sideAppeal),
+    sideChance: side,
+    friesChance: Math.min(0.9, side * w.fries),
+    drinkChance: Math.min(0.9, side * w.drink),
     recipes: recipes.length ? recipes : ['chispa'],
     goal: 0,
   };
@@ -575,6 +618,13 @@ export interface ServiceResult {
   tips: number;
   reputation: number;
   remaining: Record<string, number>;
+  /** Parte de la despensa que era de calidad al abrir (0-1). */
+  quality?: number;
+}
+
+/** Lo que multiplica las propinas hoy: festivo y despensa de calidad. */
+export function serviceTipMult(c: Campaign): number {
+  return conditions(c).tips * (1 + QUALITY.tips * qualityShare(c));
 }
 
 /** Cierra el día: cobra el servicio, paga gastos, retira lo caducado y pasa al día siguiente. */
@@ -590,10 +640,12 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
   // La reputación de la campaña depende de cómo fue el día en conjunto (no de la del servicio, que cae
   // 8 por cada cliente perdido): sube si se atiende bien a la mayoría y baja si se pierden muchos. ±6 al día como mucho.
   const serviceDelta = Math.max(-6, Math.min(6, Math.round(0.5 * r.served + 0.4 * r.perfect - 1.4 * r.lost)));
-  c.reputation = Math.max(0, Math.min(100, repBefore + serviceDelta + repFromPrices));
+  // Con ingredientes de calidad, los que comen hablan bien del sitio.
+  const repFromQuality = r.served > 0 ? Math.round(QUALITY.rep * (r.quality ?? 0)) : 0;
+  c.reputation = Math.max(0, Math.min(100, repBefore + serviceDelta + repFromPrices + repFromQuality));
 
   // Repartos a domicilio: con lo que quede en la despensa, más cuanta más reputación.
-  const { count: deliveries, income: deliveryIncome } = hasStaff(c, 'repartidor') ? deliver(c, Math.floor(c.reputation / 8)) : { count: 0, income: 0 };
+  const { count: deliveries, income: deliveryIncome } = hasStaff(c, 'repartidor') ? deliver(c, Math.floor((c.reputation / 8) * conditions(c).delivery)) : { count: 0, income: 0 };
   c.money += deliveryIncome;
 
   const rent = rentPerDay(c);
@@ -636,6 +688,8 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
     repBefore,
     repAfter: c.reputation,
     repFromPrices,
+    repFromQuality,
+    weather: dayLabel(c.day),
     moneyAfter: c.money,
     debtAfter: c.debt,
     bankrupt,

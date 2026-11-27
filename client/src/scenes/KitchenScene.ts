@@ -19,6 +19,8 @@ import {
   type RoomInfo,
   type SimEvent,
   type SimSnapshot,
+  holidayOf,
+  weatherOf,
 } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { computeLayout, isTouchDevice } from '../layout';
@@ -114,6 +116,7 @@ export class KitchenScene extends Phaser.Scene {
     this.buildWorld();
     this.addHelpers();
     this.addDecor();
+    this.addWeather();
     this.overlay = this.add.graphics().setDepth(500);
     this.syncPlayers(0, 0);
     this.layoutCamera();
@@ -323,6 +326,49 @@ export class KitchenScene extends Phaser.Scene {
     if (has('tarro')) {
       const pase = k.tiles.flat().find((t) => t.kind === 'pase');
       if (pase) at('deco_tarro', pase.x * TILE + 3, pase.y * TILE + 6, 12 + pase.y * TILE);
+    }
+  }
+
+  /** Campaña: el tiempo del día se ve en la calle (lluvia, nieve) y en festivo hay banderines. */
+  private addWeather(): void {
+    const c = net.info?.juego === 'campana' ? net.info.campana : null;
+    if (!c || c.contestToday) return;
+    const weather = weatherOf(c.day);
+    const W = this.sim.kitchen.width * TILE;
+    const H = 3 * TILE;
+    if (holidayOf(c.day)) {
+      const g = this.add.graphics().setDepth(455);
+      const colors = [0xe5483a, 0xffd23f, 0x27ae60, 0x4fa3e0, 0xff6b9d];
+      g.lineStyle(1, 0x2b1d14, 0.6).lineBetween(0, 3, W, 3);
+      for (let x = 2, i = 0; x < W - 4; x += 8, i++) {
+        g.fillStyle(colors[i % colors.length]).fillTriangle(x, 3, x + 6, 3, x + 3, 9);
+      }
+    }
+    if (weather === 'lluvia' || weather === 'nieve') {
+      const snow = weather === 'nieve';
+      const g = this.add.graphics().setDepth(456);
+      g.fillStyle(snow ? 0xffffff : 0x1a2a40, snow ? 0.08 : 0.12).fillRect(0, 0, W, H);
+      this.time.addEvent({
+        delay: snow ? 90 : 35,
+        loop: true,
+        callback: () => {
+          const x = Math.random() * W;
+          const drop = snow
+            ? this.add.rectangle(x, -2, 2, 2, 0xffffff, 0.9)
+            : this.add.rectangle(x, -4, 1, 4, 0x9cc8f0, 0.75);
+          drop.setDepth(457);
+          this.tweens.add({
+            targets: drop,
+            y: H - Math.random() * 6,
+            x: snow ? x + (Math.random() - 0.5) * 14 : x - 3,
+            duration: snow ? 2200 + Math.random() * 800 : 380,
+            onComplete: () => drop.destroy(),
+          });
+        },
+      });
+    } else if (weather === 'calor') {
+      const g = this.add.graphics().setDepth(456);
+      g.fillStyle(0xffa040, 0.1).fillRect(0, 0, W, H);
     }
   }
 

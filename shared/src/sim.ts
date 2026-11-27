@@ -269,6 +269,8 @@ export class KitchenSim {
 
   /** Pedidos servidos seguidos sin fallar (se rompe al equivocarse, perder un cliente o quemar algo). */
   streak = 0;
+  /** Campaña: las propinas valen más (festivo, ingredientes de calidad). */
+  tipMult = 1;
 
   /** Fallos perdonados por el Seguro de cocina y cada cuánto trabajan los empleados. */
   private insured = 0;
@@ -839,10 +841,13 @@ export class KitchenSim {
     const earned = Math.round(price * (0.6 + 0.4 * ratio)) * mult;
     if (order.special === 'critico' && perfect) this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 6);
     const tip = perfect
-      ? Math.ceil(price * 0.3) *
-        (this.upgrades.includes('tarro') ? 2 : 1) *
-        (this.upgrades.includes('c_propinas') ? 2 : 1) *
-        (order.mood === 'prisa' ? 2 : 1)
+      ? Math.round(
+          Math.ceil(price * 0.3) *
+            (this.upgrades.includes('tarro') ? 2 : 1) *
+            (this.upgrades.includes('c_propinas') ? 2 : 1) *
+            (order.mood === 'prisa' ? 2 : 1) *
+            this.tipMult,
+        )
       : 0;
     // Los habituales hablan bien de vosotros.
     if (order.mood === 'habitual') this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 2);
@@ -884,8 +889,8 @@ export class KitchenSim {
       isFresh && this.random() < 0.25 ? fresh : recipes[Math.floor(this.random() * recipes.length)];
     const layers = getRecipe(recipeId).layers.length;
     const sideChance = this.params.sideChance;
-    const fries = this.random() < sideChance;
-    const drink: Flavor | null = this.random() < sideChance ? (this.random() < 0.5 ? 'cola' : 'naranja') : null;
+    const fries = this.random() < (this.params.friesChance ?? sideChance);
+    const drink: Flavor | null = this.random() < (this.params.drinkChance ?? sideChance) ? (this.random() < 0.5 ? 'cola' : 'naranja') : null;
     const sides = (fries ? 1 : 0) + (drink ? 1 : 0);
     const maxPatience =
       (CONFIG.patienceBase + layers * CONFIG.patiencePerLayer + sides * CONFIG.patiencePerSide) *

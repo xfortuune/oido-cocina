@@ -59,7 +59,9 @@ export type Item =
   | { kind: 'burnt'; what: 'carne' | 'patatas' }
   | { kind: 'drink'; flavor: Flavor; fill: number }
   /** Un ingrediente suelto o una hamburguesa a medio montar (capas de abajo arriba). */
-  | { kind: 'food'; layers: Ingredient[] };
+  | { kind: 'food'; layers: Ingredient[] }
+  /** Caja de reposición del almacén (pesa: se anda más despacio). */
+  | { kind: 'restock' };
 
 /** Puestos de trabajo. Un jugador puede tener varios si sois menos de cuatro. */
 export type Role = 'caja' | 'plancha' | 'montaje' | 'freidora';
@@ -144,7 +146,12 @@ export interface Order {
   /** Aspecto del cliente. */
   look: number;
   /** Cliente especial de un evento: crítico o cumpleaños (paga el triple). */
-  special?: 'critico' | 'cumple';
+  special?: 'critico' | 'cumple' | 'gloton';
+  /** El Glotón: las hamburguesas que aún le quedan después de la actual. */
+  queue?: string[];
+  /** Mesa: pedidos que llegan juntos y pagan al final, cuando están todos servidos. */
+  group?: number;
+  groupSize?: number;
   /** Personalidad: con prisa, niño, exigente (lo quiere a su manera) o habitual. */
   mood?: Mood;
   /** Hamburguesa a su manera (sin o con doble de algo); si no, la de la receta. */
@@ -198,7 +205,13 @@ export type SimEvent =
   | { type: 'taken'; orderId: number; slot: number }
   | { type: 'denied'; playerId: string; role: Role }
   | { type: 'given'; from: string; to: string }
-  | { type: 'served'; orderId: number; slot: number; earned: number; tip: number; perfect: boolean; streak: number; bonus: number }
+  | { type: 'served'; orderId: number; slot: number; earned: number; tip: number; perfect: boolean; streak: number; bonus: number; combo?: boolean; group?: boolean }
+  /** Una mesa entera servida (cobra todo y el extra) o que se va enfadada. */
+  | { type: 'group'; ok: boolean; size: number; money: number; slot: number }
+  /** Reposición: caja rellenada desde el almacén. */
+  | { type: 'restock'; x: number; y: number; item: string; n: number }
+  /** El Glotón aparece, o se acaba (ok: se ha comido todo). */
+  | { type: 'boss'; phase: 'start' | 'end'; ok?: boolean }
   /** La racha sube de multiplicador o se rompe (con lo que llevaba). */
   | { type: 'streak'; n: number; mult: number; broken: boolean }
   | { type: 'part'; orderId: number; slot: number; part: OrderPart }
@@ -315,7 +328,12 @@ export class KitchenSim {
   private incidentPlan: { kind: IncidentKind; at: number; warned: boolean; started: boolean }[] = [];
   incident: ActiveIncident | null = null;
   /** Cliente especial (crítico, cumpleaños) esperando a que haya hueco en la calle. */
-  private pendingSpecial: 'critico' | 'cumple' | null = null;
+  private pendingSpecial: 'critico' | 'cumple' | 'gloton' | null = null;
+  /** Jefe final: cuándo llega El Glotón (null si no hay). */
+  private bossAt: number | null = null;
+  /** Mesas: lo que van pagando (se cobra al final) y la siguiente. */
+  private groupPot: Record<number, number> = {};
+  private nextGroup = 1;
   private spawnTimer: number;
   private events: SimEvent[] = [];
 
@@ -350,6 +368,13 @@ export class KitchenSim {
       }
     }
     this.windowTile = this.kitchen.tiles.flat().find((t) => t.kind === 'ventanilla');
+    // Desafío desde el nivel 6: cada caja tiene unas pocas unidades y se repone desde el almacén.
+    if (params.stock) {
+      const crates = this.kitchen.tiles.flat().filter((t) => t.kind === 'crate').map((t) => t.crate!);
+      this.stock = Object.fromEntries(crates.map((c) => [c, params.stock!]));
+      this.stock.refresco = Math.round(params.stock * 1.5);
+    }
+    if (params.boss) this.bossAt = 0.35;
     // Con la cocina ya montada (la avería necesita saber dónde están las freidoras).
     this.planIncidents(params.incidents ?? 0);
   }
@@ -460,6 +485,10 @@ export class KitchenSim {
 
     if (t.kind === 'crate') {
       const c = t.crate!;
+      if (held?.kind === 'restock') {
+        this.refill(p, c, t);
+        return;
+      }
       if (!held) {
         if (!this.take(c, p.id)) return;
         p.holding = crateItem(c);
@@ -494,6 +523,12 @@ export class KitchenSim {
           this.stats.trashed++;
           this.events.push({ type: 'trash', cost, x: t.x, y: t.y });
         }
+        return;
+
+      case 'almacen':
+        // Una caja de reposición (solo si las cajas tienen límite y no es la despensa de la campaña).
+        if (!held && this.stock && this.day === 0) p.holding = { kind: 'restock' };
+        else if (!held && this.day > 0) this.events.push({ type: 'empty', playerId: p.id, item: 'almacen' });
         return;
 
       case 'ventanilla':
@@ -545,6 +580,10 @@ export class KitchenSim {
         return;
 
       case 'drinks':
+        if (held?.kind === 'restock') {
+          this.refill(p, 'refresco', t);
+          return;
+        }
         // Apagón: las máquinas no funcionan (se puede recoger un vaso que ya estuviera lleno).
         if (this.incident?.kind === 'apagon' && !(st.item?.kind === 'drink' && st.item.fill >= 1)) {
           this.events.push({ type: 'blocked', playerId: p.id, kind: 'apagon' });
@@ -604,6 +643,11 @@ export class KitchenSim {
     this.cook(dt);
 
     this.updateTakeaway(dt);
+    if (this.bossAt !== null && this.time >= this.bossAt * this.turnDuration) {
+      this.bossAt = null;
+      this.pendingSpecial = 'gloton';
+      this.spawnTimer = Math.min(this.spawnTimer, 0.5);
+    }
     this.updateSpills(dt);
     this.trackIdle(dt);
     // Con la cocina sucia los clientes se impacientan antes.
@@ -620,6 +664,20 @@ export class KitchenSim {
         this.bump('lost');
         this.breakStreak();
         this.events.push({ type: 'lost', orderId: order.id, slot: order.slot, penalty });
+        if (order.special === 'gloton') {
+          this.reputation -= 10;
+          this.events.push({ type: 'boss', phase: 'end', ok: false });
+        }
+        // Una mesa se va entera: los que ya tenían su plato tampoco pagan.
+        if (order.group) {
+          for (const o of this.orders.filter((x) => x.group === order.group)) {
+            this.orders = this.orders.filter((x) => x !== o);
+            this.stats.lost++;
+            this.events.push({ type: 'lost', orderId: o.id, slot: o.slot, penalty: 0 });
+          }
+          delete this.groupPot[order.group];
+          this.events.push({ type: 'group', ok: false, size: order.groupSize ?? 0, money: 0, slot: order.slot });
+        }
       }
     }
 
@@ -852,6 +910,13 @@ export class KitchenSim {
       return true;
     }
 
+    // El Glotón: cada hamburguesa entregada da paso a la siguiente.
+    if (order.special === 'gloton' && part === 'burger' && order.queue?.length) {
+      order.recipeId = order.queue.shift()!;
+      this.playerStats[by].delivered++;
+      this.events.push({ type: 'part', orderId: order.id, slot: order.slot, part });
+      return true;
+    }
     order.done[part] = true;
     this.playerStats[by].delivered++;
     // Simpatía: cada parte entregada devuelve algo de paciencia.
@@ -887,7 +952,7 @@ export class KitchenSim {
     const ratio = order.patience / order.maxPatience;
     const perfect = ratio >= CONFIG.perfectThreshold;
     // Crítico y cumpleaños pagan el triple; el crítico, si sale perfecto, da mucha reputación.
-    const mult = order.special ? 3 : 1;
+    const mult = order.special === 'gloton' ? 10 : order.special ? 3 : 1;
     const earned = Math.round(price * (0.6 + 0.4 * ratio)) * mult;
     if (order.special === 'critico' && perfect) {
       this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 6);
@@ -912,7 +977,24 @@ export class KitchenSim {
     const bonus = Math.round((earned + tip) * (sm - 1) * 0.5);
 
     this.orders = this.orders.filter((o) => o !== order);
-    this.money += earned + tip + bonus;
+    if (order.special === 'gloton') {
+      this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 10);
+      this.events.push({ type: 'boss', phase: 'end', ok: true });
+    }
+    // Mesa: se guarda lo de este plato y se cobra todo (más un extra) cuando está servida la mesa entera.
+    if (order.group) {
+      this.groupPot[order.group] = (this.groupPot[order.group] ?? 0) + earned + tip + bonus;
+      if (!this.orders.some((o) => o.group === order.group)) {
+        const size = order.groupSize ?? 3;
+        const extra = 8 * size;
+        const total = this.groupPot[order.group] + extra;
+        delete this.groupPot[order.group];
+        this.money += total;
+        this.stats.earned += extra;
+        this.stats.tips += extra;
+        this.events.push({ type: 'group', ok: true, size, money: total, slot: order.slot });
+      }
+    } else this.money += earned + tip + bonus;
     this.reputation = Math.min(CONFIG.maxReputation, this.reputation + (perfect ? 2 : 1));
     this.stats.served++;
     this.bump('served');
@@ -922,7 +1004,7 @@ export class KitchenSim {
     this.stats.earned += earned + tip + bonus;
     this.stats.tips += tip + bonus;
     if (perfect) this.stats.perfect++;
-    this.events.push({ type: 'served', orderId: order.id, slot: order.slot, earned, tip, perfect, streak: this.streak, bonus });
+    this.events.push({ type: 'served', orderId: order.id, slot: order.slot, earned, tip, perfect, streak: this.streak, bonus, combo: order.fries && !!order.drink, group: !!order.group });
   }
 
   /**
@@ -937,6 +1019,11 @@ export class KitchenSim {
     if (this.pendingSpecial) {
       this.spawnSpecial(this.pendingSpecial, slot);
       this.pendingSpecial = null;
+      return null;
+    }
+    // Mesa de 3 o 4: llegan juntos a varios huecos libres.
+    if (push && this.params.groups && free.length >= 3 && !this.orders.some((o) => o.group) && this.random() < 0.15) {
+      this.spawnGroup(free);
       return null;
     }
     const { recipes } = this.params;
@@ -1176,9 +1263,58 @@ export class KitchenSim {
     if (left === 0) this.endIncident(false);
   }
 
+  /** Mesa: 3 o 4 clientes con una sola paciencia (algo más larga), que pagan todo al final. */
+  private spawnGroup(free: number[]): void {
+    const size = free.length >= 4 && this.random() < 0.4 ? 4 : 3;
+    const slots = [...free].sort(() => this.random() - 0.5).slice(0, size).sort((a, b) => a - b);
+    const group = this.nextGroup++;
+    const orders: Order[] = [];
+    for (const slot of slots) {
+      const o = this.spawnOrder(new Set(this.slots.map((_, i) => i).filter((i) => i !== slot)), false);
+      if (!o) continue;
+      this.nextId++;
+      orders.push({ ...o, mood: undefined, layers: undefined, note: undefined, group, groupSize: size });
+    }
+    const patience = Math.max(...orders.map((o) => o.maxPatience)) * 1.3;
+    for (const o of orders) this.injectOrder({ ...o, patience, maxPatience: patience });
+  }
+
+  /** Reponer una caja (o la máquina de bebidas) con la caja del almacén. */
+  private refill(p: Player, item: string, t: Tile): void {
+    if (!this.stock) return;
+    const n = item === 'refresco' ? 8 : 6;
+    this.stock[item] = (this.stock[item] ?? 0) + n;
+    p.holding = null;
+    this.events.push({ type: 'restock', x: t.x, y: t.y, item, n });
+  }
+
   /** Cliente especial: el crítico pide la hamburguesa más grande y tiene poca paciencia; el cumpleaños, menú completo. */
-  private spawnSpecial(kind: 'critico' | 'cumple', slot: number): void {
+  private spawnSpecial(kind: 'critico' | 'cumple' | 'gloton', slot: number): void {
     const recipes = this.params.recipes;
+    if (kind === 'gloton') {
+      // El Glotón: cinco hamburguesas distintas, una detrás de otra, con una sola paciencia.
+      const menu = [...recipes].sort(() => this.random() - 0.5);
+      const list = Array.from({ length: 5 }, (_, i) => menu[i % menu.length]);
+      const avg = list.reduce((n, id) => n + getRecipe(id).layers.length, 0) / list.length;
+      const maxPatience = (CONFIG.patienceBase + avg * CONFIG.patiencePerLayer) * 3.2 * this.params.patience;
+      this.orders.push({
+        id: this.nextId++,
+        recipeId: list[0],
+        queue: list.slice(1),
+        fries: false,
+        drink: null,
+        taken: true,
+        done: { burger: false, fries: false, drink: false },
+        patience: maxPatience,
+        maxPatience,
+        slot,
+        look: 5,
+        special: 'gloton',
+      });
+      this.events.push({ type: 'newOrder', orderId: this.nextId - 1 });
+      this.events.push({ type: 'boss', phase: 'start' });
+      return;
+    }
     const recipeId = [...recipes].sort((a, b) => getRecipe(b).layers.length - getRecipe(a).layers.length)[0];
     const layers = getRecipe(recipeId).layers.length;
     const fries = kind === 'cumple';
@@ -1307,7 +1443,8 @@ function has(p: Player, id: Parameters<typeof perkCount>[1]): boolean {
 
 /** Velocidad al andar, con Zapatillas rápidas. */
 export function speedOf(p: Player): number {
-  return CONFIG.playerSpeed * (1 + 0.12 * perkCount(p.perks ?? [], 'zapatillas'));
+  // Con una caja de reposición en brazos se anda más despacio.
+  return CONFIG.playerSpeed * (1 + 0.12 * perkCount(p.perks ?? [], 'zapatillas')) * (p.holding?.kind === 'restock' ? 0.75 : 1);
 }
 
 function key(x: number, y: number): string {

@@ -11,6 +11,7 @@ import type { Ingredient } from './recipes';
  *  M  mesa de montaje            F  freidora
  *  D  máquina de cola            N  máquina de zumo de naranja
  *  T  basura                     V  ventanilla de pedidos para llevar
+ *  A  almacén (reponer las cajas en el Desafío)
  *  b c q l p  cajas de pan, carne cruda, queso, lechuga y patatas
  *  t k        cajas de tomate y bacon (sus recetas salen en niveles más altos)
  */
@@ -23,7 +24,7 @@ export const KITCHEN_MAP = [
   'G___MM____F',
   'W___##____D',
   'V_________N',
-  'WbcqlpT#tkW',
+  'WbcqlpTAtkW',
 ];
 
 export type TileKind =
@@ -38,6 +39,7 @@ export type TileKind =
   | 'drinks'
   | 'trash'
   | 'ventanilla'
+  | 'almacen'
   | 'crate';
 
 export type Flavor = 'cola' | 'naranja';
@@ -76,6 +78,7 @@ const KINDS: Record<string, TileKind> = {
   F: 'fryer',
   T: 'trash',
   V: 'ventanilla',
+  A: 'almacen',
 };
 
 export interface Kitchen {
@@ -123,7 +126,7 @@ export const PUERTO_MAP = [
   'F_________#',
   'F__#####__W',
   'V_________W',
-  'WbcqlptkTWW',
+  'WbcqlptkTAW',
 ];
 
 /**
@@ -140,7 +143,7 @@ export const BARRIO2_MAP = [
   'G____###____D',
   'W___________N',
   'V___________W',
-  'WbcqlptkT#T#W',
+  'WbcqlptkTAT#W',
 ];
 
 export const BARRIO3_MAP = [
@@ -153,7 +156,7 @@ export const BARRIO3_MAP = [
   'G____##_##____F',
   'V_____________D',
   'W_____________N',
-  'WbcqlptkT###TWW',
+  'WbcqlptkTA##TWW',
 ];
 
 export type KitchenId = 'barrio' | 'barrio2' | 'barrio3' | 'puerto';

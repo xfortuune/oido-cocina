@@ -450,6 +450,21 @@ Están en `shared/src/incidents.ts` y la lógica en `sim.ts`.
   alrededor de los cocineros, los fogones y las farolas; más clientes con personalidad y **noctámbulos** (luna) que
   piden menú completo, tienen poca paciencia y dejan propina ×2,5.
 
+### Almacén, mesas y El Glotón
+
+- **Las cajas se acaban** (Desafío, desde el nivel 6): cada caja trae unas pocas unidades por ronda (10 al principio,
+  7 en el nivel 20) y se ve cuántas quedan. Para reponer hay que ir al **almacén** (la puerta con estanterías junto a
+  la basura), coger una caja de reposición (pesa: se anda más despacio) y llevarla a la caja que toque (+6) o a la
+  máquina de bebidas (+8). En la campaña, la despensa sigue comprándose por la mañana.
+- **Mesas de 3 o 4** (desde el nivel 7, también en la campaña): llegan juntos con el icono de grupo, comparten una
+  paciencia algo más larga y no pagan hasta que está servida la mesa entera; entonces cobran todo de golpe más un
+  extra. Si uno se cansa, se va la mesa entera sin pagar.
+- **Puestos que reaccionan**: con racha, las planchas se ponen al rojo (y con ×3 echan chispas), la freidora burbujea
+  mientras fríe y el pase brilla al servir un menú completo.
+- **El Glotón** (jefe final del nivel 20): a un tercio de la ronda llega un cliente gigante que pide cinco
+  hamburguesas distintas, una detrás de otra, con una sola paciencia. Si se las come todas paga como diez y da
+  +10 de reputación; si se va con hambre, −10.
+
 ### Rachas y combos
 
 Cada pedido perfecto seguido sube la racha (abajo a la izquierda): con 3 el dinero va ×1,5, con 6 ×2 y con 10 ×3

@@ -20,6 +20,8 @@ interface TicketView {
   parts: Partial<Record<OrderPart, { art: Phaser.GameObjects.Container | Phaser.GameObjects.Image; check: Phaser.GameObjects.Text }>>;
   w: number;
   h: number;
+  /** Lo que enseña (El Glotón cambia de hamburguesa: se redibuja). */
+  sig: string;
 }
 
 /** Interfaz por encima de la cocina: marcador, comandas, controles táctiles y avisos. */
@@ -589,6 +591,9 @@ export class HudScene extends Phaser.Scene {
     if (sim.night) lines.push('Turno de noche: poca luz y noctámbulos con mucha propina');
     if (!campaign && !sim.contest && sim.level === 3) lines.push('¡Nuevo! Pedidos para llevar: se entregan en la ventanilla');
     if (!campaign && !sim.contest && sim.level === 4) lines.push('¡Nuevo! Manchas en el suelo: ponte delante y friega');
+    if (!campaign && !sim.contest && !versus && sim.level === 6) lines.push('¡Nuevo! Las cajas se acaban: repón desde el almacén');
+    if (!campaign && !sim.contest && !versus && sim.level === 7) lines.push('¡Nuevo! Mesas de 3 o 4: pagan cuando está toda la mesa');
+    if (!campaign && !sim.contest && !versus && sim.level === 20) lines.push('Hoy viene El Glotón…');
     const cx = L.kitchen.x + L.kitchen.w / 2;
     const cy = L.kitchen.y + L.kitchen.h * 0.4;
     const title = txt(this, cx, cy, sim.contest ? 'CONCURSO' : versus ? 'VERSUS' : campaign ? `DÍA ${sim.day}` : `NIVEL ${sim.level}`, clamp(L.kitchen.w * 0.09, 30, 56), {
@@ -755,6 +760,13 @@ export class HudScene extends Phaser.Scene {
     sorted.forEach((order, i) => {
       const x = Math.round(inner.x + i * (w + pad));
       let view = this.tickets.get(order.id);
+      if (view && view.sig !== `${order.recipeId}:${order.queue?.length ?? 0}`) {
+        view.container.destroy();
+        this.tickets.delete(order.id);
+        view = this.createTicket(order, w, inner.h);
+        view.container.setPosition(x, inner.y);
+        this.tickets.set(order.id, view);
+      }
       if (!view) {
         view = this.createTicket(order, w, inner.h);
         view.container.setPosition(x, inner.y - 10).setAlpha(0);
@@ -784,7 +796,7 @@ export class HudScene extends Phaser.Scene {
     pixelPanel(g, 0, 0, w, h, COLORS.panel, 2);
     // Crítico (dorado) y cumpleaños (rosa) se distinguen en la comanda.
     const head =
-      order.special === 'critico' ? 0xd4a017 : order.special === 'cumple' ? 0xf28ac0 : order.takeaway ? 0x16a085 : order.mood === 'noctambulo' ? 0x34495e : order.mood === 'prisa' ? COLORS.red : order.note ? 0x8e44ad : COLORS.orange;
+      order.special === 'gloton' ? 0x8e2a2a : order.group ? 0x2f74b0 : order.special === 'critico' ? 0xd4a017 : order.special === 'cumple' ? 0xf28ac0 : order.takeaway ? 0x16a085 : order.mood === 'noctambulo' ? 0x34495e : order.mood === 'prisa' ? COLORS.red : order.note ? 0x8e44ad : COLORS.orange;
     g.fillStyle(head).fillRect(4, 2, w - 8, 15);
     container.add(g);
     // Mismo número que el bocadillo del cliente en la calle.
@@ -793,7 +805,11 @@ export class HudScene extends Phaser.Scene {
     // Cómo la quiere: «La Chispa · sin queso»; y quién es: con prisa, niño, habitual.
     const base = order.note ? `${recipe.name} · ${order.note}` : recipe.name;
     const label =
-      order.special === 'critico'
+      order.special === 'gloton'
+        ? `El Glotón · quedan ${(order.queue?.length ?? 0) + 1} · ${base}`
+        : order.group
+          ? `Mesa de ${order.groupSize} · ${base}`
+          : order.special === 'critico'
         ? `Crítico ×3 · ${base}`
         : order.special === 'cumple'
           ? `Cumple ×3 · ${base}`
@@ -846,7 +862,7 @@ export class HudScene extends Phaser.Scene {
 
     const bar = this.add.graphics();
     container.add(bar);
-    return { container, bar, parts, w, h };
+    return { container, bar, parts, w, h, sig: `${order.recipeId}:${order.queue?.length ?? 0}` };
   }
 
   // ---------------------------------------------------------------- avisos
@@ -859,8 +875,31 @@ export class HudScene extends Phaser.Scene {
         audio.sfx('lost');
         break;
       }
+      case 'group': {
+        const at = this.kitchen.worldToScreen(...this.kitchen.slotPos(ev.slot));
+        if (ev.ok) {
+          this.popup(at.x, at.y - 20, `¡Mesa de ${ev.size} servida! +${ev.money}`, '#ffc93c');
+          audio.sfx('coin');
+        } else this.popup(at.x, at.y - 20, `La mesa de ${ev.size} se va sin pagar`, '#ff6b5b');
+        break;
+      }
+      case 'restock': {
+        const at = this.kitchen.worldToScreen(ev.x + 0.5, ev.y);
+        this.popup(at.x, at.y, `+${ev.n}`, '#7dff8a');
+        break;
+      }
+      case 'boss': {
+        const L = this.L;
+        if (ev.phase === 'start') this.incidentBanner('¡Llega El Glotón!', 'Cinco hamburguesas distintas, una detrás de otra. Paga como diez.', '#e5483a');
+        else this.popup(L.kitchen.x + L.kitchen.w / 2, L.kitchen.y + L.kitchen.h * 0.45, ev.ok ? '¡El Glotón está satisfecho! +10 de reputación' : 'El Glotón se va con hambre…', ev.ok ? '#ffc93c' : '#ff6b5b');
+        break;
+      }
       case 'served': {
         const at = this.kitchen.worldToScreen(...this.kitchen.slotPos(ev.slot));
+        if (ev.group) {
+          this.popup(at.x, at.y, 'A la cuenta de la mesa', '#9cc8f0');
+          break;
+        }
         this.popup(at.x, at.y, `+${ev.earned}`, '#7dff8a');
         if (ev.perfect) this.popup(at.x, at.y + 22, `¡Perfecto! +${ev.tip}`, '#ffc93c', 150);
         if (ev.bonus) this.popup(at.x, at.y + 44, `Racha ×${streakMult(ev.streak)} +${ev.bonus}`, '#ff9f43', 300);
@@ -950,6 +989,10 @@ export class HudScene extends Phaser.Scene {
         if (ev.playerId === net.id) {
           const me = this.kitchen.localPlayer;
           const at = me ? this.kitchen.worldToScreen(me.x, me.y - 1.2) : { x: this.L.W / 2, y: this.L.H / 2 };
+          if (ev.item === 'almacen') {
+            this.popup(at.x, at.y, 'En la campaña, la despensa se compra por la mañana', '#ffc93c');
+            break;
+          }
           const name = ev.item === 'refresco' ? 'refresco' : (getStock(CRATE_STOCK[ev.item] ?? ev.item)?.name.toLowerCase() ?? ev.item);
           this.popup(at.x, at.y, `¡No queda ${name}!`, '#ff6b5b');
           audio.sfx('denied');

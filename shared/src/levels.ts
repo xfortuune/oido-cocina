@@ -44,6 +44,12 @@ export interface LevelParams {
   night?: boolean;
   /** Multiplica cuántos pedidos para llevar llegan (lluvia, nieve…). */
   takeaway?: number;
+  /** Desafío: unidades de cada caja por ronda (0: ilimitadas); se reponen desde el almacén. */
+  stock?: number;
+  /** Mesas de 3 o 4 que piden a la vez y pagan al final. */
+  groups?: boolean;
+  /** Jefe final: El Glotón. */
+  boss?: boolean;
 }
 
 /** Cuántos clientes más llegan según el número de cocineros. */
@@ -84,7 +90,7 @@ export function levelParams(level: number, players: number, estilo: Estilo = 'ro
   const expected = Math.min(duration / ((spawnStart + spawnEnd) / 2), (duration / 25) * maxOrders);
   const goal = Math.max(2, Math.round(expected * 0.55));
 
-  return { level, players, duration, spawnStart, spawnEnd, maxOrders, patience, sideChance, recipes, goal, incidents: incidentsForLevel(level), night: level % 5 === 0 };
+  return { level, players, duration, spawnStart, spawnEnd, maxOrders, patience, sideChance, recipes, goal, incidents: incidentsForLevel(level), night: level % 5 === 0, stock: level >= 6 ? Math.round(lerp(10, 7, t)) : 0, groups: level >= 7, boss: level === MAX_LEVEL };
 }
 
 /** Recetas que aparecen por primera vez en este nivel. */

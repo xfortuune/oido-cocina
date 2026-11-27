@@ -640,6 +640,9 @@ export function serviceParams(c: Campaign, players: number, estilo: Estilo): Lev
     sideChance: side,
     // Los sábados se abre de noche; con lluvia o nieve llegan más pedidos para llevar.
     night: isNightShift(c.day),
+    // En la campaña las existencias son las de la despensa, y no hay jefe final.
+    stock: 0,
+    boss: false,
     takeaway: w.delivery,
     friesChance: Math.min(0.9, side * w.fries),
     drinkChance: Math.min(0.9, side * w.drink),

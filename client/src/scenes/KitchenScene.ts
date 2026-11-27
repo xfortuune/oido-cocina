@@ -24,6 +24,7 @@ import {
   weatherDay,
   seasonOf,
   realSeason,
+  streakMult,
 } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { computeLayout, isTouchDevice } from '../layout';
@@ -72,6 +73,8 @@ interface CustomerView {
   leaving: boolean;
   /** Altura a la que espera (la calle, o la ventanilla si es para llevar). */
   baseY: number;
+  /** Lo que enseña el bocadillo (El Glotón cambia de hamburguesa). */
+  sig: string;
 }
 
 /**
@@ -87,6 +90,8 @@ export class KitchenScene extends Phaser.Scene {
   private customers = new Map<number, CustomerView>();
   private spillViews = new Map<string, Phaser.GameObjects.Image>();
   private nightRt: Phaser.GameObjects.RenderTexture | null = null;
+  /** Brillo de los fogones con la racha. */
+  private heat: Phaser.GameObjects.Graphics | null = null;
   private overlay!: Phaser.GameObjects.Graphics;
   private keys!: Record<'up' | 'down' | 'left' | 'right' | 'w' | 'a' | 's' | 'd', Phaser.Input.Keyboard.Key>;
   private sendTimer = 0;
@@ -120,6 +125,7 @@ export class KitchenScene extends Phaser.Scene {
     this.customers.clear();
     this.spillViews.clear();
     this.nightRt = null;
+    this.heat = null;
     this.touch.x = this.touch.y = 0;
     this.leaving = false;
 
@@ -251,6 +257,7 @@ export class KitchenScene extends Phaser.Scene {
     const st = this.sim.station(t.x, t.y);
     switch (t.kind) {
       case 'crate':
+        if (held?.kind === 'restock') return 'Rellenar';
         if (!held) return 'Coger';
         if (held.kind === 'food' && held.layers.length === 1 && held.layers[0] === t.crate) return 'Devolver';
         return held.kind === 'food' && p.perks.includes('bandeja') && t.crate !== 'carne_cruda' && t.crate !== 'patatas'
@@ -258,6 +265,8 @@ export class KitchenScene extends Phaser.Scene {
           : '—';
       case 'trash':
         return held ? 'Tirar' : '—';
+      case 'almacen':
+        return !held && this.sim.stock && this.sim.day === 0 ? 'Reponer' : '—';
       case 'ventanilla':
         return held && (held.kind === 'food' || held.kind === 'fries' || (held.kind === 'drink' && held.fill >= 1)) ? 'Para llevar' : '—';
       case 'pase':
@@ -269,6 +278,7 @@ export class KitchenScene extends Phaser.Scene {
         if (!held && st?.item) return 'Coger';
         return held?.kind === (t.kind === 'grill' ? 'raw' : 'potatoes') && !st?.item ? (t.kind === 'grill' ? 'Cocinar' : 'Freír') : '—';
       case 'drinks':
+        if (held?.kind === 'restock') return 'Rellenar';
         if (held) return '—';
         if (!st?.item) return 'Llenar';
         return st.item.kind === 'drink' && st.item.fill >= 1 ? 'Coger' : '—';
@@ -676,6 +686,38 @@ export class KitchenScene extends Phaser.Scene {
       if (item) this.tweens.add({ targets: view.container, scaleX: { from: 1.25, to: 1 }, scaleY: { from: 0.8, to: 1 }, duration: 160, ease: 'Back.Out' });
     }
     audio.setAmbience(net.paused ? 0 : grills, net.paused ? 0 : fryers);
+    this.drawHeat(time);
+  }
+
+  /**
+   * Los puestos reaccionan a cómo vais: con racha, las planchas se ponen al rojo (y con ×3 echan chispas);
+   * la freidora burbujea mientras fríe.
+   */
+  private drawHeat(time: number): void {
+    const g = (this.heat ??= this.add.graphics().setDepth(4));
+    g.clear();
+    const mult = streakMult(this.sim.streak);
+    for (const row of this.sim.kitchen.tiles) {
+      for (const t of row) {
+        if (t.kind === 'grill' && mult > 1) {
+          const pulse = 0.5 + 0.5 * Math.sin(time / (mult >= 3 ? 90 : 180));
+          g.fillStyle(mult >= 2 ? 0xff3b1f : 0xff8a3d, (mult >= 3 ? 0.35 : 0.2) + 0.12 * pulse).fillRect(t.x * TILE + 1, t.y * TILE + 1, TILE - 2, TILE - 2);
+          if (mult >= 3 && Math.random() < 0.06) this.puff(t.x * TILE + 3 + Math.random() * 10, t.y * TILE + 4, 0xff8a3d, 0.9);
+        }
+        if (t.kind === 'fryer' && this.sim.station(t.x, t.y)?.item?.kind === 'potatoes' && Math.random() < 0.15) {
+          const b = this.add.rectangle(t.x * TILE + 3 + Math.random() * 10, t.y * TILE + 8, 1, 1, 0xfff4b0).setDepth(451);
+          this.tweens.add({ targets: b, y: b.y - 4, alpha: 0, duration: 400, onComplete: () => b.destroy() });
+        }
+      }
+    }
+  }
+
+  /** El pase brilla al servir un menú completo (hamburguesa, patatas y bebida). */
+  private shinePase(): void {
+    for (const t of this.sim.kitchen.tiles.flat().filter((x) => x.kind === 'pase' || x.kind === 'ventanilla')) {
+      const r = this.add.rectangle(t.x * TILE + TILE / 2, t.y * TILE + TILE / 2, TILE, TILE, 0xfff4b0, 0.7).setDepth(5);
+      this.tweens.add({ targets: r, alpha: 0, duration: 500, delay: Math.abs(t.x) * 30, onComplete: () => r.destroy() });
+    }
   }
 
   /** Una nubecilla que sube y se desvanece. */
@@ -779,7 +821,7 @@ export class KitchenScene extends Phaser.Scene {
     for (const order of orders) {
       let view = this.customers.get(order.id);
       if (!view) view = this.spawnCustomer(order);
-      if (view.taken !== order.taken) this.rebuildBubble(view, order);
+      if (view.taken !== order.taken || view.sig !== bubbleSig(order)) this.rebuildBubble(view, order);
       for (const [part, img] of Object.entries(view.parts)) img.setAlpha(order.done[part as OrderPart] ? 0.25 : 1);
       const ratio = Math.max(0, order.patience / order.maxPatience);
       const color = ratio > 0.5 ? 0x43b049 : ratio > 0.25 ? 0xffa726 : 0xe5483a;
@@ -797,16 +839,20 @@ export class KitchenScene extends Phaser.Scene {
   private spawnCustomer(order: Order): CustomerView {
     if (order.takeaway) return this.spawnRider(order);
     const x = this.sim.slots[order.slot] * TILE;
-    const y = CUSTOMER_Y * TILE + 5;
+    // El Glotón es enorme: un poco más abajo, para que se vea su bocadillo.
+    const y = CUSTOMER_Y * TILE + 5 + (order.special === 'gloton' ? 10 : 0);
     const fromLeft = order.slot < 2 || (order.slot === 2 && order.id % 2 === 0);
     const sprite = this.add.image(fromLeft ? -12 : this.sim.kitchen.width * TILE + 12, y, customerKey(order.look)).setOrigin(0.5, 1).setDepth(10 + y);
     const sweat = this.add.image(x + 5, y - 15, 'icon_sweat').setDepth(11 + y).setVisible(false);
-    const view: CustomerView = { sprite, sweat, ...this.buildBubble(order, x, y - 18), taken: order.taken, leaving: false, baseY: y };
+    // El Glotón es enorme.
+    const giant = order.special === 'gloton';
+    if (giant) sprite.setScale(2);
+    const view: CustomerView = { sprite, sweat, ...this.buildBubble(order, x, y - (giant ? 28 : 18)), taken: order.taken, leaving: false, baseY: y, sig: bubbleSig(order) };
     view.bubble.setAlpha(0);
     this.tweens.add({
       targets: sprite,
       x,
-      duration: 900,
+      duration: giant ? 1800 : 900,
       ease: 'Quad.Out',
       onComplete: () => view.bubble.active && this.tweens.add({ targets: view.bubble, alpha: 1, duration: 200 }),
     });
@@ -821,7 +867,7 @@ export class KitchenScene extends Phaser.Scene {
     const y = (wy + 0.75) * TILE;
     const sprite = this.add.image(x - 10, y, customerKey(order.look)).setOrigin(0.5, 1).setDepth(10 + y).setAlpha(0).setTint(0xdfe8ff);
     const sweat = this.add.image(x + 5, y - 15, 'icon_sweat').setDepth(11 + y).setVisible(false);
-    const view: CustomerView = { sprite, sweat, ...this.buildBubble(order, x + 22, y - 18), taken: true, leaving: false, baseY: y };
+    const view: CustomerView = { sprite, sweat, ...this.buildBubble(order, x + 22, y - 18), taken: true, leaving: false, baseY: y, sig: bubbleSig(order) };
     view.bubble.setAlpha(0);
     this.tweens.add({
       targets: sprite,
@@ -837,7 +883,7 @@ export class KitchenScene extends Phaser.Scene {
   private rebuildBubble(view: CustomerView, order: Order): void {
     const { x, y } = view.bubble;
     view.bubble.destroy();
-    Object.assign(view, this.buildBubble(order, x, y), { taken: order.taken });
+    Object.assign(view, this.buildBubble(order, x, y), { taken: order.taken, sig: bubbleSig(order) });
   }
 
   /**
@@ -859,7 +905,12 @@ export class KitchenScene extends Phaser.Scene {
     // Número del hueco, o una bolsa si es para llevar.
     bubble.add(this.add.image(-half + 2, -bubbleH + 2, order.takeaway ? 'icon_bag' : `digit_${order.slot + 1}`).setOrigin(0));
     // Clientes especiales: estrella dorada (crítico) o confeti (cumpleaños) encima del bocadillo.
-    if (order.special) {
+    if (order.special === 'gloton') {
+      // Cuántas le quedan, encima del bocadillo.
+      bubble.add(this.add.image(half - 4, -bubbleH - 4, `digit_${(order.queue?.length ?? 0) + 1}`).setOrigin(0.5).setScale(2));
+    } else if (order.group) {
+      bubble.add(this.add.image(half - 2, -bubbleH - 3, 'icon_group').setOrigin(0.5));
+    } else if (order.special) {
       const icon = this.add.image(half - 1, -bubbleH - 1, order.special === 'critico' ? 'icon_star' : 'icon_confetti').setOrigin(0.5);
       if (order.special === 'cumple') icon.setScale(2).setTint(0xf28ac0);
       bubble.add(icon);
@@ -1014,12 +1065,24 @@ export class KitchenScene extends Phaser.Scene {
         const c = this.customers.get(ev.orderId);
         if (c) this.sparkle(c.sprite.x, c.sprite.y - 10, ev.perfect);
         this.sendAway(ev.orderId, true);
+        if (ev.combo) this.shinePase();
         audio.sfx(ev.perfect ? 'perfect' : 'served');
         this.lastActionSound = now;
         break;
       }
       case 'stolen':
         this.sendAway(ev.orderId, false);
+        break;
+      case 'restock':
+        this.sparkle((ev.x + 0.5) * TILE, ev.y * TILE + 4, false);
+        audio.sfx('coin');
+        this.lastActionSound = now;
+        break;
+      case 'boss':
+        if (ev.phase === 'start') {
+          this.cameras.main.shake(500, 0.008);
+          audio.sfx('alarm');
+        } else audio.sfx(ev.ok ? 'levelUp' : 'lost');
         break;
       case 'spill':
         audio.sfx('drop');
@@ -1081,4 +1144,9 @@ export class KitchenScene extends Phaser.Scene {
       this.tweens.add({ targets: s, y: s.y - 14, alpha: 0, delay: i * 120, duration: 900, onComplete: () => s.destroy() });
     }
   }
+}
+
+/** Lo que enseña el bocadillo de un cliente (para saber si hay que redibujarlo). */
+function bubbleSig(o: Order): string {
+  return `${o.recipeId}:${o.queue?.length ?? 0}`;
 }

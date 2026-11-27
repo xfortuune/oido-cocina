@@ -365,6 +365,8 @@ export function itemKey(item: Exclude<Item, { kind: 'food' }>): string {
       return item.what === 'carne' ? 'ing_carne_quemada' : 'side_fritas_quemadas';
     case 'drink':
       return `side_vaso_${item.flavor}`;
+    case 'restock':
+      return 'item_restock';
   }
 }
 
@@ -477,6 +479,18 @@ function generateTiles(scene: Phaser.Scene): void {
     rect(c, '#57392a', 12, 8, 1, 7);
     rect(c, '#7d5940', 0, 0, T, 1);
   });
+  // Almacén: puerta con estanterías de cajas.
+  canvas(scene, 'tile_almacen', T, T, (c) => {
+    rect(c, '#6b4a35', 0, 0, T, T);
+    rect(c, '#2b1d14', 1, 1, 14, 15);
+    rect(c, '#8c5529', 2, 2, 12, 14);
+    rect(c, '#b97a45', 3, 3, 4, 3);
+    rect(c, '#b97a45', 9, 3, 4, 3);
+    rect(c, '#6b4029', 2, 7, 12, 1);
+    rect(c, '#b97a45', 3, 9, 4, 3);
+    rect(c, '#d69a62', 9, 9, 4, 3);
+    rect(c, '#ffd23f', 12, 13, 2, 2);
+  });
   // Ventanilla de los pedidos para llevar: un hueco en la pared con mostrador y un rótulo.
   canvas(scene, 'tile_ventanilla', T, T, (c) => {
     rect(c, '#6b4a35', 0, 0, T, T);
@@ -555,6 +569,8 @@ function generateIcons(scene: Phaser.Scene): void {
   paint(scene, 'deco_nota', ['..kk', '..kk', '..k.', 'kkk.', 'kkk.'], { k: '#ffd23f' });
   paint(scene, 'icon_heart', ['.kk.kk.', 'krrkrrk', 'krrrrrk', '.krrrk.', '..krk..', '...k...'], pal);
   // Bolsa de pedido para llevar, luna (turno de noche) y mancha del suelo.
+  paint(scene, 'item_restock', ['kkkkkkkkkkkk', 'kbbbbbbbbbbk', 'kbBbbbbbbBbk', 'kkkkkkkkkkkk', 'kbbbbyybbbbk', 'kbbbbbbbbbbk', 'kkkkkkkkkkkk'], { ...pal, b: '#c8955c', B: '#8c5529', y: '#ffd23f' }, 12);
+  paint(scene, 'icon_group', ['.kk..kk..kk.', 'kssk.kssk.kssk'.slice(0, 12), 'kssk.kssk.ks', '.kk..kk..kk.', 'kaak.kaak.ka', 'kaak.kaak.ka'], { ...pal, s: '#f2c09a', a: '#4fa3e0' });
   paint(scene, 'icon_bag', ['..kk..', '.k..k.', 'kkkkkk', 'kbbbbk', 'kbyybk', 'kbbbbk', 'kkkkkk'], { ...pal, b: '#c8955c', y: '#ff8a3d' });
   paint(scene, 'icon_moon', ['..kkk.', '.kyyk.', 'kyyk..', 'kyyk..', 'kyyyk.', '.kyyyk', '..kkk.'], { ...pal, y: '#ffe07a' });
   paint(scene, 'spill', [

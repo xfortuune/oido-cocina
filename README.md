@@ -429,6 +429,25 @@ Lo que se compra en la campaña aparece en la escena: terraza con sombrillas, me
 flotando, el letrero de neón BURGER que parpadea, cuadros y el tarro de propinas; y los empleados aparecen junto a su
 puesto.
 
+### Perfil y logros
+
+Cada cocinero tiene un perfil con sus estadísticas de siempre (pedidos, perfectos, mejor racha, mejor nivel, días de
+campaña, veces MVP…) y 19 logros, de «¡Oído!» (primer pedido) a «Leyenda» (los 20 niveles del Desafío), pasando por
+rachas, rondas impecables, el crítico, concursos, festivos o abrir con nieve. Se guarda en el servidor
+(`DATA_DIR/perfiles.json`) por cuenta de Discord o, en el navegador, por nombre. Al conseguir un logro sale un aviso
+arriba; en la sala se ve cuántos logros tiene cada uno, y desde el menú, «Perfil y logros» enseña el tuyo con el
+progreso de los que faltan. Están en `shared/src/achievements.ts`.
+
+### Mando
+
+Se puede jugar con mando (Xbox, PlayStation o cualquiera con el mapeo estándar del navegador):
+
+- **En la cocina:** stick izquierdo o cruceta para moverse, **A** coger/dejar, **X** «¡Oído!», **Y** «¡Ayuda!» y
+  **Start** pausa.
+- **En los menús:** cruceta o stick para elegir botón (sale un recuadro amarillo) y **A** para pulsarlo.
+
+Al conectarlo sale un aviso con los controles. Está en `client/src/gamepad.ts` y `client/src/scenes/OverlayScene.ts`.
+
 ### Tutorial
 
 La primera vez que se juega (en la campaña o en el Desafío, nunca en un concurso) sale una guía paso a paso con una

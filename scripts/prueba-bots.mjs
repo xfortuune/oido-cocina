@@ -18,6 +18,8 @@ async function bot(name, opts = {}) {
   b.emotes = [];
   room.onMessage('emote', (e) => b.emotes.push(e));
   room.onMessage('bought', () => {});
+  room.onMessage('perfil', (p) => (b.perfil = p));
+  room.onMessage('logro', (l) => (b.logros = [...(b.logros ?? []), ...l]));
   room.send('hello');
   b.me = () => b.snap?.players.find((p) => p.id === b.id);
   // Camina a velocidad normal por los puntos indicados y se gira hacia `face`.
@@ -334,6 +336,8 @@ await chispa();
 check(chef.snap.stats.served >= 2, `Sirve ${chef.snap.stats.served} pedidos (objetivo ${chef.snap.goal})`);
 while (!chef.summary) await wait(200);
 check(chef.summary.passed && chef.summary.perkNext, 'Nivel 2 superado: toca elegir habilidad');
+await wait(200);
+check(chef.perfil?.stats.served >= 2 && chef.perfil.stats.bestLevel >= 2 && !!chef.perfil.achievements.oido, `Perfil: ${chef.perfil?.stats.served} servidos, nivel ${chef.perfil?.stats.bestLevel} y logro «¡Oído!»`);
 chef.room.send('lobby');
 await wait(300);
 const offer = chef.info.members[0].offer;

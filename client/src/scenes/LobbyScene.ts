@@ -207,7 +207,7 @@ export class LobbyScene extends Phaser.Scene {
       const ry = y + 8 + i * rowH + (anyPerks ? 15 * s : rowH / 2);
       this.add.image(W / 2 - boxW / 2 + 22, ry + 8 * s, chefKey(m.look ?? m.color, 'down', 0)).setScale(Math.max(1, Math.round(1.6 * s))).setOrigin(0.5, 1);
       const roles = libre ? 'Toda la cocina' : m.roles.length ? m.roles.map((r) => ROLE_NAMES[r]).join(', ') : 'sin puesto';
-      const label = `${m.name}${m.id === net.id ? ' (tú)' : ''}`;
+      const label = `${m.name}${m.id === net.id ? ' (tú)' : ''}${m.logros ? ` · ${m.logros} logros` : ''}`;
       const avatarSize = Math.round(22 * s);
       const avatar = addAvatar(this, m, W / 2 - boxW / 2 + 44 + avatarSize / 2, ry, avatarSize);
       const nameX = W / 2 - boxW / 2 + 44 + (avatar ? avatarSize + 8 : 0);

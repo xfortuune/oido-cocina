@@ -39,6 +39,8 @@
 //   'bought'   id: alguien ha comprado algo en la tienda
 //   'sorpresa' string: lo que ha salido de la caja sorpresa
 //   'unlock'   HatId: (solo a quien la compra) ropa especial desbloqueada para siempre
+//   'perfil'   Profile: (solo a cada uno) su perfil, al entrar y tras cada ronda
+//   'logro'    { id, name, description }[]: (solo a cada uno) logros recién conseguidos
 
 import type { Campaign } from './campaign';
 import type { Estilo } from './levels';
@@ -116,6 +118,8 @@ export interface LobbyMember {
   look: ChefLook;
   /** Campaña: clave de su formación (cuenta de Discord, o «web:nombre» en el navegador). */
   chefKey?: string;
+  /** Logros conseguidos (perfil). */
+  logros?: number;
 }
 
 export interface EmoteMessage {

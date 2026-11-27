@@ -25,6 +25,7 @@ import {
 import { audio } from '../audio';
 import { computeLayout, isTouchDevice } from '../layout';
 import { net } from '../net';
+import { pad, padEvents, type PadButton } from '../gamepad';
 import { fillItem, fillStack, itemSignature, stackPixelHeight } from '../pixel/items';
 import { chefKey, customerKey, drinkKey, TILE, tileKey } from '../pixel/sprites';
 
@@ -139,6 +140,17 @@ export class KitchenScene extends Phaser.Scene {
       const n = Number(e.key);
       if (n >= 1 && n <= EMOTES.length) net.emote(n - 1);
     });
+
+    // Mando: A coger/dejar, X e Y gestos, Start pausa.
+    const onPad = (b: PadButton) => {
+      if (b === 'start') this.events.emit('escape');
+      else if (net.paused) return;
+      else if (b === 'a') this.interact();
+      else if (b === 'x') net.emote(0);
+      else if (b === 'y') net.emote(1);
+    };
+    padEvents.on('down', onPad);
+    this.events.once('shutdown', () => padEvents.off('down', onPad));
 
     const onSnap = (s: SimSnapshot) => this.sim.applySnapshot(s, net.id);
     const onEvents = (evs: SimEvent[]) => evs.forEach((ev) => this.handleEvent(ev));
@@ -433,6 +445,10 @@ export class KitchenScene extends Phaser.Scene {
     if (x === 0 && y === 0) {
       x = this.touch.x;
       y = this.touch.y;
+    }
+    if (x === 0 && y === 0) {
+      x = pad.x;
+      y = pad.y;
     }
     this.sim.setInput(p.id, x, y);
     this.sim.stepPlayer(p, dt);

@@ -13,6 +13,8 @@ import { PerkScene } from './scenes/PerkScene';
 import { RankingScene } from './scenes/RankingScene';
 import { ShopScene } from './scenes/ShopScene';
 import { SummaryScene } from './scenes/SummaryScene';
+import { OverlayScene } from './scenes/OverlayScene';
+import { ProfileScene } from './scenes/ProfileScene';
 
 async function start(): Promise<void> {
   // Phaser dibuja el texto en un canvas: la fuente tiene que estar cargada antes.
@@ -33,7 +35,7 @@ async function start(): Promise<void> {
     // Los avatares vienen de cdn.discordapp.com: hace falta CORS para usarlos como textura.
     loader: { crossOrigin: 'anonymous' },
     // El orden importa: el HUD se dibuja encima de la cocina.
-    scene: [MenuScene, LobbyScene, KitchenScene, HudScene, SummaryScene, PerkScene, ShopScene, RankingScene, LookScene, CampaignScene],
+    scene: [MenuScene, LobbyScene, KitchenScene, HudScene, SummaryScene, PerkScene, ShopScene, RankingScene, LookScene, CampaignScene, ProfileScene, OverlayScene],
   });
   startPresence();
   // El navegador solo deja sonar tras el primer toque o tecla.

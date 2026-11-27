@@ -180,6 +180,8 @@ export interface TurnStats {
   combos?: number;
   /** La mejor racha de la ronda. */
   bestStreak?: number;
+  /** Críticos servidos perfectos. */
+  critics?: number;
 }
 
 export type SimEvent =
@@ -839,7 +841,10 @@ export class KitchenSim {
     // Crítico y cumpleaños pagan el triple; el crítico, si sale perfecto, da mucha reputación.
     const mult = order.special ? 3 : 1;
     const earned = Math.round(price * (0.6 + 0.4 * ratio)) * mult;
-    if (order.special === 'critico' && perfect) this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 6);
+    if (order.special === 'critico' && perfect) {
+      this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 6);
+      this.stats.critics = (this.stats.critics ?? 0) + 1;
+    }
     const tip = perfect
       ? Math.round(
           Math.ceil(price * 0.3) *

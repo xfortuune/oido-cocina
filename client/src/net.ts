@@ -16,6 +16,7 @@ import {
   type SimEvent,
   type SimSnapshot,
   type SummaryInfo,
+  type Profile,
 } from '@hora-punta/shared';
 
 /**
@@ -31,6 +32,8 @@ class Net extends Phaser.Events.EventEmitter {
   info: RoomInfo | null = null;
   snapshot: SimSnapshot | null = null;
   summary: SummaryInfo | null = null;
+  /** Tu perfil (el último que mandó el servidor, o el guardado de otra vez). */
+  profile: Profile | null = loadProfile();
 
   get connected(): boolean {
     return this.room !== null;
@@ -75,6 +78,17 @@ class Net extends Phaser.Events.EventEmitter {
       saveOwnedHat(hat);
       this.emit('unlock', hat);
     });
+    // Perfil y logros: se guarda una copia para enseñarlo desde el menú sin conexión.
+    room.onMessage('perfil', (p: Profile) => {
+      this.profile = p;
+      try {
+        localStorage.setItem('horaPunta.perfil', JSON.stringify(p));
+      } catch {
+        /* sin almacenamiento */
+      }
+      this.emit('perfil', p);
+    });
+    room.onMessage('logro', (list: { id: string; name: string; description: string }[]) => this.emit('logro', list));
     room.onMessage('emote', (msg: EmoteMessage) => this.emit('emote', msg));
     room.onMessage('summary', (summary: SummaryInfo) => {
       this.summary = summary;
@@ -239,5 +253,14 @@ function saveOwnedHat(hat: string): void {
     localStorage.setItem('horaPunta.armario', JSON.stringify([...all]));
   } catch {
     // sin almacenamiento
+  }
+}
+
+function loadProfile(): Profile | null {
+  try {
+    const raw = localStorage.getItem('horaPunta.perfil');
+    return raw ? (JSON.parse(raw) as Profile) : null;
+  } catch {
+    return null;
   }
 }

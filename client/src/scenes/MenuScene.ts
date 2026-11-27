@@ -140,6 +140,14 @@ export class MenuScene extends Phaser.Scene {
       fontSize: 18 * s,
       onPress: () => this.scene.start('ranking'),
     });
+    new Button(this, W / 2, sy + 54 * s, {
+      w: sw * 2 + gap,
+      h: 42 * s,
+      color: 0x6d8a3c,
+      label: net.profile ? `Perfil y logros (${Object.keys(net.profile.achievements).length})` : 'Perfil y logros',
+      fontSize: 17 * s,
+      onPress: () => this.scene.start('profile'),
+    });
     addSoundToggle(this, W - 24, 24, 3);
     // Versión, abajo a la izquierda (para saber qué hay desplegado).
     txt(this, 8, H - 6, __VERSION__, 11, { color: '#fff4dc66' }).setOrigin(0, 1);

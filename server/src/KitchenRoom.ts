@@ -62,10 +62,16 @@ import {
   type RoomInfo,
   type RoomPhase,
   type SummaryInfo,
+  holidayOf,
+  weatherOf,
+  type RoundRecord,
 } from '@hora-punta/shared';
 import { discordConfig, fetchUser, type DiscordUser } from './discord.ts';
 import { loadCampaign, saveCampaign } from './campaignStore.ts';
 import { addRanking, cleanGroup, getRanking } from './ranking.ts';
+import { getProfile, recordProfile } from './profiles.ts';
+
+const NO_STATS = { taken: 0, delivered: 0, cooked: 0, assembled: 0, mistakes: 0 };
 
 const GUEST = { guest: true } as const;
 
@@ -93,6 +99,8 @@ export class KitchenRoom extends Room {
   /** Habilidades de la partida por jugador (id de Discord, o de sesión en el navegador), por si sale y vuelve a entrar. */
   private runPerks = new Map<string, string[]>();
   private memberKeys = new Map<string, string>();
+  /** Clave del perfil (logros) de cada cliente. */
+  private profileKeys = new Map<string, string>();
   /** Dinero y mejoras de la tienda de la partida en curso. */
   private dinero = 0;
   private mejoras: string[] = [];
@@ -256,6 +264,12 @@ export class KitchenRoom extends Room {
       member.perks = [...chefFor(this.campana, key, name).perks];
       member.chefKey = key;
     }
+    // Perfil y logros: por cuenta de Discord o, en el navegador, por nombre.
+    const profileKey = user?.id ?? `web:${name}`;
+    this.profileKeys.set(client.sessionId, profileKey);
+    const profile = getProfile(profileKey, name, user?.avatar ?? null);
+    member.logros = Object.keys(profile.achievements).length;
+    client.send('perfil', profile);
     this.members.set(client.sessionId, member);
     if (this.juego === 'campana') this.modo = Math.max(1, Math.min(MAX_PLAYERS, this.members.size));
     if (this.phase !== 'playing') this.assignRoles();
@@ -279,6 +293,7 @@ export class KitchenRoom extends Room {
     this.sim?.removePlayer(client.sessionId);
     this.lastInput.delete(client.sessionId);
     this.memberKeys.delete(client.sessionId);
+    this.profileKeys.delete(client.sessionId);
     if (this.juego === 'campana') this.modo = Math.max(1, Math.min(MAX_PLAYERS, this.members.size));
     if (this.phase === 'gestion' || this.phase === 'cierre') {
       this.assignRoles();
@@ -489,6 +504,14 @@ export class KitchenRoom extends Room {
       return { key: this.memberKeys.get(m.id) ?? m.id, name: m.name, gained: Math.max(5, mvpScore(st)) };
     });
     afterClose(c, report, { stats: sim.stats, contest: contest ? { served: sim.stats.served, goal: sim.goal } : null, xp });
+    const mvp = [...this.members.values()].sort((a, b) => mvpScore(sim.playerStats[b.id] ?? NO_STATS) - mvpScore(sim.playerStats[a.id] ?? NO_STATS))[0];
+    this.recordProfiles(sim, mvp?.id ?? null, {
+      money: contest ? 0 : sim.money,
+      campaignDay: true,
+      contestWon: !!report.contest?.won,
+      holiday: !contest && !!holidayOf(report.day),
+      snow: !contest && weatherOf(report.day) === 'nieve',
+    });
     for (const m of this.members.values()) {
       const t = c.chefs[this.memberKeys.get(m.id) ?? m.id];
       if (t) m.perks = [...t.perks];
@@ -517,6 +540,7 @@ export class KitchenRoom extends Room {
       return { ...m, perks: [...m.perks], stats, score: mvpScore(stats) };
     });
     const best = [...summaryPlayers].sort((a, b) => b.score - a.score)[0];
+    this.recordProfiles(sim, best?.id ?? null, { levelPassed: passed ? sim.level : 0 });
 
     // Totales de la partida
     const run = this.run;
@@ -564,6 +588,33 @@ export class KitchenRoom extends Room {
     this.phase = 'summary';
     this.broadcast('summary', this.summary);
     this.broadcastRoom();
+  }
+
+  /** Apunta la ronda en el perfil de cada cocinero y avisa de los logros nuevos. */
+  private recordProfiles(sim: KitchenSim, mvpId: string | null, extra: Partial<RoundRecord>): void {
+    const st = sim.stats;
+    for (const m of this.members.values()) {
+      const key = this.profileKeys.get(m.id);
+      if (!key) continue;
+      const { profile, fresh } = recordProfile(key, m.name, {
+        served: st.served,
+        perfect: st.perfect,
+        money: sim.money,
+        burnt: st.burnt,
+        wrong: st.wrong,
+        lost: st.lost,
+        bestStreak: st.bestStreak ?? 0,
+        critics: st.critics ?? 0,
+        players: this.members.size,
+        mvp: m.id === mvpId,
+        levelPassed: 0,
+        ...extra,
+      });
+      m.logros = Object.keys(profile.achievements).length;
+      const client = this.clients.find((c) => c.sessionId === m.id);
+      client?.send('perfil', profile);
+      if (fresh.length) client?.send('logro', fresh.map((a) => ({ id: a.id, name: a.name, description: a.description })));
+    }
   }
 
   /** Resumen de la partida entera y entrada en el ranking del grupo. */

@@ -151,9 +151,11 @@ export interface Order {
   layers?: Ingredient[];
   /** Cómo la quiere, para la comanda: «sin queso», «doble de queso»… */
   note?: string;
+  /** Para llevar: lo recoge un repartidor en la ventanilla (slot -1). */
+  takeaway?: boolean;
 }
 
-export type Mood = 'prisa' | 'nino' | 'exigente' | 'habitual';
+export type Mood = 'prisa' | 'nino' | 'exigente' | 'habitual' | 'noctambulo';
 
 /** Capas que hay que entregar para un pedido (la receta, o como la quiere el cliente). */
 export function orderLayers(o: Order): readonly Ingredient[] {
@@ -205,7 +207,10 @@ export type SimEvent =
   /** Eventos aleatorios: aviso, empieza o acaba (la inspección dice si fue limpia y su premio). */
   | { type: 'incident'; kind: IncidentKind; phase: 'soon' | 'start' | 'end'; ok?: boolean; bonus?: number }
   | { type: 'repair'; x: number; y: number; left: number }
-  | { type: 'blocked'; playerId: string; kind: IncidentKind };
+  | { type: 'blocked'; playerId: string; kind: IncidentKind }
+  /** Una mancha en el suelo (refresco, aceite…) y cómo va la limpieza. */
+  | { type: 'spill'; x: number; y: number }
+  | { type: 'clean'; x: number; y: number; left: number };
 
 export type EndReason = 'time' | 'reputation';
 
@@ -226,6 +231,9 @@ export interface SimSnapshot {
   needsCaja: boolean;
   /** Pedidos servidos seguidos (racha). */
   streak: number;
+  /** Manchas del suelo: casilla → frotadas que faltan. */
+  spills: Record<string, number>;
+  night: boolean;
   stock: Record<string, number> | null;
   money: number;
   reputation: number;
@@ -273,6 +281,14 @@ export class KitchenSim {
   streak = 0;
   /** Campaña: las propinas valen más (festivo, ingredientes de calidad). */
   tipMult = 1;
+  /** Manchas del suelo: casilla → frotadas que faltan para limpiarla. */
+  spills: Record<string, number> = {};
+  /** Turno de noche. */
+  night: boolean;
+  /** Ventanilla de los pedidos para llevar (si la cocina tiene). */
+  readonly windowTile: Tile | undefined;
+  private takeawayTimer = 20;
+  private spillTimer = 25;
 
   /** Fallos perdonados por el Seguro de cocina y cada cuánto trabajan los empleados. */
   private insured = 0;
@@ -302,6 +318,7 @@ export class KitchenSim {
     readonly map: KitchenId = 'barrio',
   ) {
     this.turnDuration = params.duration;
+    this.night = !!params.night;
     this.level = params.level;
     this.goal = params.goal;
     // El primer cliente llega enseguida.
@@ -321,6 +338,7 @@ export class KitchenSim {
         }
       }
     }
+    this.windowTile = this.kitchen.tiles.flat().find((t) => t.kind === 'ventanilla');
     // Con la cocina ya montada (la avería necesita saber dónde están las freidoras).
     this.planIncidents(params.incidents ?? 0);
   }
@@ -419,7 +437,7 @@ export class KitchenSim {
         mate.holding = held;
         p.holding = null;
         this.events.push({ type: 'given', from: p.id, to: mate.id });
-      }
+      } else if (!held) this.scrub(t.x, t.y);
       return;
     }
 
@@ -465,6 +483,11 @@ export class KitchenSim {
           this.stats.trashed++;
           this.events.push({ type: 'trash', cost, x: t.x, y: t.y });
         }
+        return;
+
+      case 'ventanilla':
+        // Para llevar: se entrega al repartidor (cualquiera puede).
+        if (held && this.deliver(held, t, id)) p.holding = null;
         return;
 
       case 'pase':
@@ -569,8 +592,12 @@ export class KitchenSim {
     }
     this.cook(dt);
 
+    this.updateTakeaway(dt);
+    this.updateSpills(dt);
+    // Con la cocina sucia los clientes se impacientan antes.
+    const dirt = 1 + 0.12 * Object.keys(this.spills).length;
     for (const order of [...this.orders]) {
-      order.patience -= dt;
+      order.patience -= dt * dirt;
       if (order.patience <= 0) {
         this.orders = this.orders.filter((o) => o !== order);
         // Si el crítico se va enfadado, lo cuenta en su columna: mucha más reputación perdida.
@@ -610,6 +637,8 @@ export class KitchenSim {
       incident: this.incident,
       needsCaja: this.needsCaja,
       streak: this.streak,
+      spills: this.spills,
+      night: this.night,
       stock: this.stock,
       money: this.money,
       reputation: this.reputation,
@@ -637,6 +666,8 @@ export class KitchenSim {
     this.incident = s.incident;
     this.needsCaja = s.needsCaja;
     this.streak = s.streak;
+    this.spills = s.spills ?? {};
+    this.night = !!s.night;
     this.stock = s.stock;
     this.money = s.money;
     this.reputation = s.reputation;
@@ -683,7 +714,9 @@ export class KitchenSim {
       p.fy = Math.sign(iy);
     }
     const r = CONFIG.playerRadius;
-    const step = speedOf(p) * dt;
+    // Pisar una mancha pegajosa frena.
+    const sticky = this.spills[key(Math.floor(p.x), Math.floor(p.y))] ? 0.55 : 1;
+    const step = speedOf(p) * dt * sticky;
 
     // Cada eje por separado, para poder deslizarse pegado a las encimeras.
     const nx = p.x + ix * step;
@@ -759,7 +792,9 @@ export class KitchenSim {
    * Devuelve false si lo que se lleva no se puede servir (carne cruda, vaso a medio llenar…).
    */
   private deliver(item: Item, at: Tile, by: string): boolean {
-    const byUrgency = this.orders.filter((o) => o.taken).sort((a, b) => a.patience - b.patience);
+    // En la ventanilla solo los pedidos para llevar; en el pase, los de la calle.
+    const toGo = at.kind === 'ventanilla';
+    const byUrgency = this.orders.filter((o) => o.taken && !!o.takeaway === toGo).sort((a, b) => a.patience - b.patience);
     let part: OrderPart;
     let order: Order | undefined;
     if (item.kind === 'food') {
@@ -850,7 +885,7 @@ export class KitchenSim {
           Math.ceil(price * 0.3) *
             (this.upgrades.includes('tarro') ? 2 : 1) *
             (this.upgrades.includes('c_propinas') ? 2 : 1) *
-            (order.mood === 'prisa' ? 2 : 1) *
+            (order.mood === 'prisa' ? 2 : order.mood === 'noctambulo' ? 2.5 : 1) *
             this.tipMult,
         )
       : 0;
@@ -926,7 +961,12 @@ export class KitchenSim {
    */
   private withMood(o: Order): Order {
     // Los 3 primeros clientes de la ronda son normales, para calentar.
-    if (this.level < 2 || o.id <= 3 || this.random() > 0.3) return o;
+    if (this.level < 2 || o.id <= 3 || this.random() > (this.night ? 0.55 : 0.3)) return o;
+    // De noche: noctámbulos que piden menú completo y dejan mucha propina, pero tienen poca paciencia.
+    if (this.night && this.random() < 0.4) {
+      const t = o.patience * 0.9;
+      return { ...o, mood: 'noctambulo', fries: true, drink: o.drink ?? (this.random() < 0.5 ? 'cola' : 'naranja'), patience: t, maxPatience: t };
+    }
     const r = this.random();
     if (r < 0.3) {
       const t = o.patience * 0.65;
@@ -967,6 +1007,14 @@ export class KitchenSim {
   /** El freidor echa patatas y el barman llena vasos cuando los pedidos los necesitan. */
   private autoStaff(): void {
     const pending = this.orders.filter((o) => o.taken);
+    // El limpiador friega las manchas.
+    if (this.upgrades.includes('emp_limpiador')) {
+      const k = Object.keys(this.spills)[0];
+      if (k) {
+        const [x, y] = k.split(',').map(Number);
+        this.scrub(x, y);
+      }
+    }
     if (this.upgrades.includes('emp_freidor')) {
       const need = pending.filter((o) => o.fries && !o.done.fries).length;
       const have = this.countItems((it) => it.kind === 'fries' || it.kind === 'potatoes');
@@ -1071,7 +1119,8 @@ export class KitchenSim {
     if (!inc) return;
     this.incident = null;
     if (inc.kind === 'inspeccion') {
-      const ok = inc.clean !== false;
+      // Un suelo con manchas también suspende la inspección.
+      const ok = inc.clean !== false && Object.keys(this.spills).length === 0;
       if (ok) {
         this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 5);
         this.money += 10;
@@ -1119,6 +1168,64 @@ export class KitchenSim {
     };
     this.orders.push(order);
     this.events.push({ type: 'newOrder', orderId: order.id });
+  }
+
+  // ---------------------------------------------------------------- para llevar y manchas
+
+  /** Desde el nivel 3, de vez en cuando llega un repartidor a la ventanilla a por un pedido (como mucho 2 a la vez). */
+  private updateTakeaway(dt: number): void {
+    if (!this.windowTile || this.level < 3 || this.contest) return;
+    this.takeawayTimer -= dt;
+    if (this.takeawayTimer > 0) return;
+    this.takeawayTimer = lerp(30, 18, this.progress) / (this.params.takeaway ?? 1);
+    if (this.orders.filter((o) => o.takeaway).length >= 2) return;
+    const recipes = this.params.recipes;
+    const recipeId = recipes[Math.floor(this.random() * recipes.length)];
+    const fries = this.random() < 0.5;
+    const drink: Flavor | null = this.random() < 0.4 ? (this.random() < 0.5 ? 'cola' : 'naranja') : null;
+    const sides = (fries ? 1 : 0) + (drink ? 1 : 0);
+    // El repartidor espera algo más que un cliente, pero no para siempre.
+    const maxPatience =
+      (CONFIG.patienceBase + getRecipe(recipeId).layers.length * CONFIG.patiencePerLayer + sides * CONFIG.patiencePerSide) * this.params.patience * 1.2;
+    const order: Order = {
+      id: this.nextId++,
+      recipeId,
+      fries,
+      drink,
+      taken: true,
+      done: { burger: false, fries: false, drink: false },
+      patience: maxPatience,
+      maxPatience,
+      slot: -1,
+      look: Math.floor(this.random() * 1000),
+      takeaway: true,
+    };
+    this.orders.push(order);
+    this.events.push({ type: 'newOrder', orderId: order.id });
+  }
+
+  /** Desde el nivel 4 se derrama algo de vez en cuando: la mancha frena y pone nerviosos a los clientes. */
+  private updateSpills(dt: number): void {
+    if (this.level < 4 || this.contest) return;
+    this.spillTimer -= dt;
+    if (this.spillTimer > 0) return;
+    this.spillTimer = 22 + this.random() * 14;
+    if (Object.keys(this.spills).length >= 3) return;
+    const floors = this.kitchen.tiles.flat().filter((t) => t.kind === 'floor' && !this.spills[key(t.x, t.y)]);
+    const t = floors[Math.floor(this.random() * floors.length)];
+    if (!t) return;
+    this.spills[key(t.x, t.y)] = 3;
+    this.events.push({ type: 'spill', x: t.x, y: t.y });
+  }
+
+  /** Frotar una mancha (3 veces y queda limpia). */
+  private scrub(x: number, y: number): void {
+    const k = key(x, y);
+    if (!this.spills[k]) return;
+    const left = this.spills[k] - 1;
+    if (left <= 0) delete this.spills[k];
+    else this.spills[k] = left;
+    this.events.push({ type: 'clean', x, y, left });
   }
 
   private finish(reason: EndReason): void {

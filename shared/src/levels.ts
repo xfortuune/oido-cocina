@@ -40,6 +40,10 @@ export interface LevelParams {
   /** Campaña: probabilidad propia de patatas y de bebida (por el tiempo); si no, `sideChance`. */
   friesChance?: number;
   drinkChance?: number;
+  /** Turno de noche: poca luz, clientes noctámbulos y más personalidades. */
+  night?: boolean;
+  /** Multiplica cuántos pedidos para llevar llegan (lluvia, nieve…). */
+  takeaway?: number;
 }
 
 /** Cuántos clientes más llegan según el número de cocineros. */
@@ -80,7 +84,7 @@ export function levelParams(level: number, players: number, estilo: Estilo = 'ro
   const expected = Math.min(duration / ((spawnStart + spawnEnd) / 2), (duration / 25) * maxOrders);
   const goal = Math.max(2, Math.round(expected * 0.55));
 
-  return { level, players, duration, spawnStart, spawnEnd, maxOrders, patience, sideChance, recipes, goal, incidents: incidentsForLevel(level) };
+  return { level, players, duration, spawnStart, spawnEnd, maxOrders, patience, sideChance, recipes, goal, incidents: incidentsForLevel(level), night: level % 5 === 0 };
 }
 
 /** Recetas que aparecen por primera vez en este nivel. */

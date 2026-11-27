@@ -125,11 +125,11 @@ export class HudScene extends Phaser.Scene {
     } else if (sim.day > 0) {
       // Campaña: no hay objetivo, el dinero es lo que cuenta.
       this.hud.served.setText(String(sim.stats.served)).setColor('#fff4dc');
-      this.levelText?.setText(`Día ${sim.day} · ${weekday(sim.day)} · ${WEATHER[weatherOf(sim.day)].name}${holidayOf(sim.day) ? ' · ¡Festivo!' : ''}`);
+      this.levelText?.setText(`Día ${sim.day} · ${weekday(sim.day)} · ${sim.night ? 'Noche' : WEATHER[weatherOf(sim.day)].name}${holidayOf(sim.day) ? ' · ¡Festivo!' : ''}`);
     } else {
       const reached = sim.stats.served >= sim.goal;
       this.hud.served.setText(`${sim.stats.served}/${sim.goal}`).setColor(reached ? '#7ee081' : '#fff4dc');
-      this.levelText?.setText(`Nivel ${sim.level}${reached ? ' · ¡objetivo cumplido!' : ''}`);
+      this.levelText?.setText(`Nivel ${sim.level}${sim.night ? " · Turno de noche" : ""}${reached ? ' · ¡objetivo cumplido!' : ''}`);
     }
     const perks = this.kitchen.localPlayer?.perks ?? [];
     const perksKey = perks.join(',');
@@ -568,6 +568,9 @@ export class HudScene extends Phaser.Scene {
       ? [`${weekday(sim.day)} · unos ${sim.goal} clientes en ${formatDuration(sim.turnDuration)}`]
       : [`Servid ${sim.goal} pedidos en ${formatDuration(sim.turnDuration)}`];
     if (fresh.length) lines.push(`¡Receta nueva: ${fresh.join(', ')}!`);
+    if (sim.night) lines.push('Turno de noche: poca luz y noctámbulos con mucha propina');
+    if (!campaign && !sim.contest && sim.level === 3) lines.push('¡Nuevo! Pedidos para llevar: se entregan en la ventanilla');
+    if (!campaign && !sim.contest && sim.level === 4) lines.push('¡Nuevo! Manchas en el suelo: ponte delante y friega');
     const cx = L.kitchen.x + L.kitchen.w / 2;
     const cy = L.kitchen.y + L.kitchen.h * 0.4;
     const title = txt(this, cx, cy, sim.contest ? 'CONCURSO' : campaign ? `DÍA ${sim.day}` : `NIVEL ${sim.level}`, clamp(L.kitchen.w * 0.09, 30, 56), {
@@ -730,7 +733,7 @@ export class HudScene extends Phaser.Scene {
       }
     }
     // Ordenadas por hueco, igual que los clientes en la calle.
-    const sorted = [...orders].sort((a, b) => a.slot - b.slot);
+    const sorted = [...orders].sort((a, b) => (a.slot < 0 ? 99 : a.slot) - (b.slot < 0 ? 99 : b.slot));
     sorted.forEach((order, i) => {
       const x = Math.round(inner.x + i * (w + pad));
       let view = this.tickets.get(order.id);
@@ -763,12 +766,12 @@ export class HudScene extends Phaser.Scene {
     pixelPanel(g, 0, 0, w, h, COLORS.panel, 2);
     // Crítico (dorado) y cumpleaños (rosa) se distinguen en la comanda.
     const head =
-      order.special === 'critico' ? 0xd4a017 : order.special === 'cumple' ? 0xf28ac0 : order.mood === 'prisa' ? COLORS.red : order.note ? 0x8e44ad : COLORS.orange;
+      order.special === 'critico' ? 0xd4a017 : order.special === 'cumple' ? 0xf28ac0 : order.takeaway ? 0x16a085 : order.mood === 'noctambulo' ? 0x34495e : order.mood === 'prisa' ? COLORS.red : order.note ? 0x8e44ad : COLORS.orange;
     g.fillStyle(head).fillRect(4, 2, w - 8, 15);
     container.add(g);
     // Mismo número que el bocadillo del cliente en la calle.
     g.fillStyle(0xffffff).fillRect(4, 2, 12, 15);
-    container.add(this.add.image(7, 4, `digit_${order.slot + 1}`).setOrigin(0).setScale(2));
+    container.add(this.add.image(order.takeaway ? 5 : 7, order.takeaway ? 3 : 4, order.takeaway ? 'icon_bag' : `digit_${order.slot + 1}`).setOrigin(0).setScale(order.takeaway ? 1.5 : 2));
     // Cómo la quiere: «La Chispa · sin queso»; y quién es: con prisa, niño, habitual.
     const base = order.note ? `${recipe.name} · ${order.note}` : recipe.name;
     const label =
@@ -776,6 +779,10 @@ export class HudScene extends Phaser.Scene {
         ? `Crítico ×3 · ${base}`
         : order.special === 'cumple'
           ? `Cumple ×3 · ${base}`
+          : order.takeaway
+            ? `Para llevar · ${base}`
+            : order.mood === 'noctambulo'
+              ? `Noctámbulo · ${base}`
           : order.mood === 'prisa'
             ? `¡Prisa! · ${base}`
             : order.mood === 'habitual'
@@ -829,7 +836,7 @@ export class HudScene extends Phaser.Scene {
   private onSimEvent(ev: SimEvent): void {
     switch (ev.type) {
       case 'served': {
-        const at = this.kitchen.worldToScreen(this.kitchen.sim.slots[ev.slot] ?? 0, 2);
+        const at = this.kitchen.worldToScreen(...this.kitchen.slotPos(ev.slot));
         this.popup(at.x, at.y, `+${ev.earned}`, '#7dff8a');
         if (ev.perfect) this.popup(at.x, at.y + 22, `¡Perfecto! +${ev.tip}`, '#ffc93c', 150);
         if (ev.bonus) this.popup(at.x, at.y + 44, `Racha ×${streakMult(ev.streak)} +${ev.bonus}`, '#ff9f43', 300);
@@ -852,7 +859,7 @@ export class HudScene extends Phaser.Scene {
         break;
       }
       case 'lost': {
-        const at = this.kitchen.worldToScreen(this.kitchen.sim.slots[ev.slot] ?? 0, 2);
+        const at = this.kitchen.worldToScreen(...this.kitchen.slotPos(ev.slot));
         this.popup(at.x, at.y, `¡Se ha ido! -${ev.penalty}★`, '#ff6b5b');
         break;
       }
@@ -873,7 +880,7 @@ export class HudScene extends Phaser.Scene {
         break;
       }
       case 'taken': {
-        const at = this.kitchen.worldToScreen(this.kitchen.sim.slots[ev.slot] ?? 0, 2);
+        const at = this.kitchen.worldToScreen(...this.kitchen.slotPos(ev.slot));
         this.popup(at.x, at.y, '¡Nota tomada!', '#ffffff');
         break;
       }
@@ -939,7 +946,7 @@ export class HudScene extends Phaser.Scene {
         }
         break;
       case 'part': {
-        const at = this.kitchen.worldToScreen(this.kitchen.sim.slots[ev.slot] ?? 0, 2);
+        const at = this.kitchen.worldToScreen(...this.kitchen.slotPos(ev.slot));
         const label = ev.part === 'burger' ? 'Hamburguesa' : ev.part === 'fries' ? 'Patatas' : 'Bebida';
         this.popup(at.x, at.y + 20, `${label} ✓`, '#ffffff');
         break;

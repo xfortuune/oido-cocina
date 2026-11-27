@@ -566,6 +566,9 @@ export function serviceParams(c: Campaign, players: number, estilo: Estilo): Lev
     spawnStart: p.spawnStart / d,
     spawnEnd: p.spawnEnd / d,
     sideChance: side,
+    // Los sábados se abre de noche; con lluvia o nieve llegan más pedidos para llevar.
+    night: isNightShift(c.day),
+    takeaway: w.delivery,
     friesChance: Math.min(0.9, side * w.fries),
     drinkChance: Math.min(0.9, side * w.drink),
     recipes: recipes.length ? recipes : ['chispa'],
@@ -573,6 +576,11 @@ export function serviceParams(c: Campaign, players: number, estilo: Estilo): Lev
   };
   params.goal = expectedCustomers(params);
   return params;
+}
+
+/** Campaña: el servicio del sábado es turno de noche. */
+export function isNightShift(day: number): boolean {
+  return (day - 1) % 7 === 5;
 }
 
 /** Clientes que se esperan en un servicio con estos parámetros (aprox.). */

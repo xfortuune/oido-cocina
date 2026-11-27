@@ -229,7 +229,7 @@ export const CONTEST_PRIZE = 100;
 
 export function contestParams(c: Campaign, players: number, estilo: Estilo): LevelParams {
   // En el concurso no hay eventos: se compite en igualdad.
-  return { ...levelParams(contestLevel(c), players, estilo), incidents: 0 };
+  return { ...levelParams(contestLevel(c), players, estilo), incidents: 0, night: false };
 }
 
 // ---------------------------------------------------------------- formación

@@ -67,6 +67,8 @@ interface CustomerView {
   /** Si el bocadillo ya muestra el pedido (la caja ha tomado nota). */
   taken: boolean;
   leaving: boolean;
+  /** Altura a la que espera (la calle, o la ventanilla si es para llevar). */
+  baseY: number;
 }
 
 /**
@@ -80,6 +82,8 @@ export class KitchenScene extends Phaser.Scene {
   private players = new Map<string, PlayerView>();
   private stations = new Map<string, StationView>();
   private customers = new Map<number, CustomerView>();
+  private spillViews = new Map<string, Phaser.GameObjects.Image>();
+  private nightRt: Phaser.GameObjects.RenderTexture | null = null;
   private overlay!: Phaser.GameObjects.Graphics;
   private keys!: Record<'up' | 'down' | 'left' | 'right' | 'w' | 'a' | 's' | 'd', Phaser.Input.Keyboard.Key>;
   private sendTimer = 0;
@@ -111,6 +115,8 @@ export class KitchenScene extends Phaser.Scene {
     this.stockLabels.clear();
     this.campaign = net.info?.juego === 'campana';
     this.customers.clear();
+    this.spillViews.clear();
+    this.nightRt = null;
     this.touch.x = this.touch.y = 0;
     this.leaving = false;
 
@@ -200,6 +206,13 @@ export class KitchenScene extends Phaser.Scene {
     return this.sim.players.get(net.id);
   }
 
+  /** Dónde espera el cliente de un hueco (en casillas); -1 es la ventanilla de para llevar. */
+  slotPos(slot: number): [number, number] {
+    const w = this.sim.windowTile;
+    if (slot < 0 && w) return [w.x + 0.5, w.y];
+    return [this.sim.slots[slot] ?? 0, 2];
+  }
+
   /** Coordenadas de pantalla (para el HUD) de un punto del mundo en casillas. */
   worldToScreen(x: number, y: number): { x: number; y: number } {
     const cam = this.cameras.main;
@@ -226,6 +239,7 @@ export class KitchenScene extends Phaser.Scene {
       const mate = [...this.sim.players.values()].some(
         (o) => o !== p && !o.holding && Math.floor(o.x) === t.x && Math.floor(o.y) === t.y,
       );
+      if (!held && this.sim.spills[`${t.x},${t.y}`]) return 'Fregar';
       return held && mate ? 'Pasar' : held ? 'Llevando' : '—';
     }
     const role = roleFor(t.kind);
@@ -240,6 +254,8 @@ export class KitchenScene extends Phaser.Scene {
           : '—';
       case 'trash':
         return held ? 'Tirar' : '—';
+      case 'ventanilla':
+        return held && (held.kind === 'food' || held.kind === 'fries' || (held.kind === 'drink' && held.fill >= 1)) ? 'Para llevar' : '—';
       case 'pase':
         if (!held) return this.sim.orders.some((o) => !o.taken) ? 'Tomar nota' : '—';
         if (held.kind === 'food' || held.kind === 'fries' || (held.kind === 'drink' && held.fill >= 1)) return 'Servir';
@@ -384,6 +400,70 @@ export class KitchenScene extends Phaser.Scene {
     }
   }
 
+  /** Manchas del suelo: una imagen por casilla, más clara según se va fregando. */
+  private syncSpills(): void {
+    const spills = this.sim.spills;
+    for (const [k, img] of this.spillViews) {
+      if (!spills[k]) {
+        this.spillViews.delete(k);
+        this.tweens.add({ targets: img, alpha: 0, scale: 0.5, duration: 250, onComplete: () => img.destroy() });
+      }
+    }
+    for (const [k, left] of Object.entries(spills)) {
+      let img = this.spillViews.get(k);
+      if (!img) {
+        const [x, y] = k.split(',').map(Number);
+        img = this.add.image((x + 0.5) * TILE, (y + 0.55) * TILE, 'spill').setDepth(2).setScale(0.3);
+        this.tweens.add({ targets: img, scale: 1, duration: 200, ease: 'Back.Out' });
+        this.spillViews.set(k, img);
+      }
+      img.setAlpha(0.35 + 0.22 * left);
+    }
+  }
+
+  /** Turno de noche: todo a oscuras salvo alrededor de los cocineros, los fogones y la calle con farolas. */
+  private drawNight(): void {
+    if (!this.sim.night) {
+      this.nightRt?.setVisible(false);
+      return;
+    }
+    const k = this.sim.kitchen;
+    const W = k.width * TILE;
+    const H = k.height * TILE;
+    if (!this.nightRt) {
+      if (!this.textures.exists('light')) {
+        const tex = this.textures.createCanvas('light', 64, 64)!;
+        const c = tex.getContext();
+        const grad = c.createRadialGradient(32, 32, 4, 32, 32, 32);
+        grad.addColorStop(0, 'rgba(255,255,255,1)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        c.fillStyle = grad;
+        c.fillRect(0, 0, 64, 64);
+        tex.refresh();
+        const small = this.textures.createCanvas('light_s', 32, 32)!;
+        const cs = small.getContext();
+        const g2 = cs.createRadialGradient(16, 16, 2, 16, 16, 16);
+        g2.addColorStop(0, 'rgba(255,255,255,0.85)');
+        g2.addColorStop(1, 'rgba(255,255,255,0)');
+        cs.fillStyle = g2;
+        cs.fillRect(0, 0, 32, 32);
+        small.refresh();
+      }
+      this.nightRt = this.add.renderTexture(0, 0, W, H).setOrigin(0).setDepth(380);
+    }
+    const rt = this.nightRt.setVisible(true);
+    rt.clear();
+    rt.fill(0x070a24, 0.74);
+    for (const v of this.players.values()) rt.erase('light', v.rx * TILE - 32, v.ry * TILE - 36);
+    for (const row of k.tiles) {
+      for (const t of row) {
+        if (t.kind === 'grill' || t.kind === 'fryer' || t.kind === 'pase' || t.kind === 'ventanilla') rt.erase('light_s', t.x * TILE - 8, t.y * TILE - 8);
+      }
+    }
+    // Farolas de la calle
+    for (let x = 2; x < k.width; x += 4) rt.erase('light', x * TILE - 32, 2 * TILE - 40);
+  }
+
   private addStockLabel(key: string, item: string, x: number, y: number, icon?: Phaser.GameObjects.Image): void {
     const label = this.add.container(x * TILE + 1, y * TILE + 1).setDepth(470).setVisible(false);
     this.stockLabels.set(key, { item, x, y, icon, label, shown: -1 });
@@ -418,6 +498,8 @@ export class KitchenScene extends Phaser.Scene {
     this.syncStations(time);
     this.syncPlayers(time, dt);
     this.syncCustomers(time);
+    this.syncSpills();
+    this.drawNight();
     this.drawOverlay(time);
     // La música se acelera en los últimos 30 segundos.
     audio.setIntensity(this.sim.ended || net.paused ? 0 : 1 - this.sim.timeLeft / 30);
@@ -654,7 +736,7 @@ export class KitchenScene extends Phaser.Scene {
       view.bar.clear().fillStyle(0x2b1d14).fillRect(-8, 0, 16, 3).fillStyle(color).fillRect(-7, 1, Math.max(1, Math.round(14 * ratio)), 1);
       // Los clientes impacientes dan saltitos y sudan.
       if (ratio < 0.25 && !this.tweens.isTweening(view.sprite)) {
-        view.sprite.y = CUSTOMER_Y * TILE + 5 - (Math.floor(time / 180) % 2);
+        view.sprite.y = view.baseY - (Math.floor(time / 180) % 2);
       }
       const nervous = ratio < 0.35 && !view.leaving;
       view.sweat.setVisible(nervous);
@@ -663,18 +745,39 @@ export class KitchenScene extends Phaser.Scene {
   }
 
   private spawnCustomer(order: Order): CustomerView {
+    if (order.takeaway) return this.spawnRider(order);
     const x = this.sim.slots[order.slot] * TILE;
     const y = CUSTOMER_Y * TILE + 5;
     const fromLeft = order.slot < 2 || (order.slot === 2 && order.id % 2 === 0);
     const sprite = this.add.image(fromLeft ? -12 : this.sim.kitchen.width * TILE + 12, y, customerKey(order.look)).setOrigin(0.5, 1).setDepth(10 + y);
     const sweat = this.add.image(x + 5, y - 15, 'icon_sweat').setDepth(11 + y).setVisible(false);
-    const view: CustomerView = { sprite, sweat, ...this.buildBubble(order, x, y - 18), taken: order.taken, leaving: false };
+    const view: CustomerView = { sprite, sweat, ...this.buildBubble(order, x, y - 18), taken: order.taken, leaving: false, baseY: y };
     view.bubble.setAlpha(0);
     this.tweens.add({
       targets: sprite,
       x,
       duration: 900,
       ease: 'Quad.Out',
+      onComplete: () => view.bubble.active && this.tweens.add({ targets: view.bubble, alpha: 1, duration: 200 }),
+    });
+    this.customers.set(order.id, view);
+    return view;
+  }
+
+  /** Repartidor de un pedido para llevar: se asoma por la ventanilla con su casco. */
+  private spawnRider(order: Order): CustomerView {
+    const [wx, wy] = this.slotPos(-1);
+    const x = wx * TILE;
+    const y = (wy + 0.75) * TILE;
+    const sprite = this.add.image(x - 10, y, customerKey(order.look)).setOrigin(0.5, 1).setDepth(10 + y).setAlpha(0).setTint(0xdfe8ff);
+    const sweat = this.add.image(x + 5, y - 15, 'icon_sweat').setDepth(11 + y).setVisible(false);
+    const view: CustomerView = { sprite, sweat, ...this.buildBubble(order, x + 22, y - 18), taken: true, leaving: false, baseY: y };
+    view.bubble.setAlpha(0);
+    this.tweens.add({
+      targets: sprite,
+      x,
+      alpha: 1,
+      duration: 500,
       onComplete: () => view.bubble.active && this.tweens.add({ targets: view.bubble, alpha: 1, duration: 200 }),
     });
     this.customers.set(order.id, view);
@@ -703,12 +806,15 @@ export class KitchenScene extends Phaser.Scene {
     bg.fillStyle(0xffffff).fillRect(-half + 2, -bubbleH + 1, half * 2 - 4, bubbleH - 2).fillRect(-half + 1, -bubbleH + 2, half * 2 - 2, bubbleH - 4);
     bg.fillStyle(0x2b1d14).fillRect(-2, 0, 4, 1).fillRect(-1, 1, 2, 1);
     bubble.add(bg);
-    bubble.add(this.add.image(-half + 2, -bubbleH + 2, `digit_${order.slot + 1}`).setOrigin(0));
+    // Número del hueco, o una bolsa si es para llevar.
+    bubble.add(this.add.image(-half + 2, -bubbleH + 2, order.takeaway ? 'icon_bag' : `digit_${order.slot + 1}`).setOrigin(0));
     // Clientes especiales: estrella dorada (crítico) o confeti (cumpleaños) encima del bocadillo.
     if (order.special) {
       const icon = this.add.image(half - 1, -bubbleH - 1, order.special === 'critico' ? 'icon_star' : 'icon_confetti').setOrigin(0.5);
       if (order.special === 'cumple') icon.setScale(2).setTint(0xf28ac0);
       bubble.add(icon);
+    } else if (order.mood === 'noctambulo') {
+      bubble.add(this.add.image(half - 1, -bubbleH - 1, 'icon_moon').setOrigin(0.5));
     } else if (order.mood === 'prisa' || order.mood === 'habitual') {
       // Con prisa: reloj; habitual: corazón.
       bubble.add(this.add.image(half - 1, -bubbleH - 1, order.mood === 'prisa' ? 'icon_clock' : 'icon_heart').setOrigin(0.5));
@@ -862,6 +968,13 @@ export class KitchenScene extends Phaser.Scene {
         this.lastActionSound = now;
         break;
       }
+      case 'spill':
+        audio.sfx('drop');
+        break;
+      case 'clean':
+        audio.sfx(ev.left ? 'tick' : 'coin');
+        this.lastActionSound = now;
+        break;
       case 'part':
         audio.sfx('part');
         this.lastActionSound = now;

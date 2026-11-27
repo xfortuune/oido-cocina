@@ -409,6 +409,18 @@ En los concursos no hay eventos.
 
 Están en `shared/src/incidents.ts` y la lógica en `sim.ts`.
 
+### Para llevar, manchas y turno de noche
+
+- **Pedidos para llevar** (desde el nivel 3, y en la campaña a partir del día 5): un repartidor se asoma a la
+  **ventanilla** de la pared y espera su pedido (bolsa en la comanda, como mucho 2 a la vez). Se entrega en la
+  ventanilla, no en el pase, y cualquiera puede hacerlo. Con lluvia o nieve llegan muchos más.
+- **Manchas en el suelo** (desde el nivel 4): de vez en cuando se derrama algo. Pisarlas frena, y con la cocina sucia
+  los clientes se impacientan antes; si hay manchas al acabar una inspección, se suspende. Se friegan poniéndose
+  delante con las manos vacías y pulsando acción 3 veces. El limpiador del Desafío las friega solo.
+- **Turno de noche** (niveles 5, 10, 15 y 20 del Desafío, y los sábados de la campaña): la cocina a oscuras salvo
+  alrededor de los cocineros, los fogones y las farolas; más clientes con personalidad y **noctámbulos** (luna) que
+  piden menú completo, tienen poca paciencia y dejan propina ×2,5.
+
 ### Rachas y combos
 
 Cada pedido perfecto seguido sube la racha (abajo a la izquierda): con 3 el dinero va ×1,5, con 6 ×2 y con 10 ×3

@@ -393,6 +393,16 @@ function generateTiles(scene: Phaser.Scene): void {
     rect(c, '#57392a', 12, 8, 1, 7);
     rect(c, '#7d5940', 0, 0, T, 1);
   });
+  // Ventanilla de los pedidos para llevar: un hueco en la pared con mostrador y un rótulo.
+  canvas(scene, 'tile_ventanilla', T, T, (c) => {
+    rect(c, '#6b4a35', 0, 0, T, T);
+    rect(c, '#2b1d14', 2, 1, 12, 13);
+    rect(c, '#1f2a3a', 3, 2, 10, 8);
+    rect(c, '#3a4d66', 3, 2, 10, 2);
+    rect(c, '#d8d3cb', 2, 10, 12, 3);
+    rect(c, '#ffffff', 2, 10, 12, 1);
+    rect(c, '#ff8a3d', 5, 14, 6, 2);
+  });
   canvas(scene, 'tile_fryer', T, T, (c) => {
     rect(c, '#2b1d14', 0, 0, T, T);
     rect(c, '#a9adb5', 1, 1, T - 2, T - 2);
@@ -460,6 +470,12 @@ function generateIcons(scene: Phaser.Scene): void {
   paint(scene, 'deco_tarro', ['.kkkk.', 'kwwwwk', 'kwyywk', 'kyyyyk', 'kyYyyk', 'kkkkkk'], deco);
   paint(scene, 'deco_nota', ['..kk', '..kk', '..k.', 'kkk.', 'kkk.'], { k: '#ffd23f' });
   paint(scene, 'icon_heart', ['.kk.kk.', 'krrkrrk', 'krrrrrk', '.krrrk.', '..krk..', '...k...'], pal);
+  // Bolsa de pedido para llevar, luna (turno de noche) y mancha del suelo.
+  paint(scene, 'icon_bag', ['..kk..', '.k..k.', 'kkkkkk', 'kbbbbk', 'kbyybk', 'kbbbbk', 'kkkkkk'], { ...pal, b: '#c8955c', y: '#ff8a3d' });
+  paint(scene, 'icon_moon', ['..kkk.', '.kyyk.', 'kyyk..', 'kyyk..', 'kyyyk.', '.kyyyk', '..kkk.'], { ...pal, y: '#ffe07a' });
+  paint(scene, 'spill', [
+    '....cccc....', '..cccccccc..', '.cccCCcccccc', 'ccccCccccccc', 'cccccccccCc.', '.ccccccccc..', '...ccc.cc...', '.......c....',
+  ], { c: '#c97b3a', C: '#f0b070' });
   paint(scene, 'icon_sweat', ['.c.', 'ccc', 'cbc', '.c.'], pal);
   paint(scene, 'icon_spark', ['..y..', '..y..', 'yybyy', '..y..', '..y..'], pal);
   paint(scene, 'icon_confetti', ['yy', 'yy'], { y: '#ffffff' });

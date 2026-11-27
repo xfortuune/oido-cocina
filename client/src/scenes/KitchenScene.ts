@@ -557,6 +557,12 @@ export class KitchenScene extends Phaser.Scene {
     bg.fillStyle(0x2b1d14).fillRect(-2, 0, 4, 1).fillRect(-1, 1, 2, 1);
     bubble.add(bg);
     bubble.add(this.add.image(-half + 2, -bubbleH + 2, `digit_${order.slot + 1}`).setOrigin(0));
+    // Clientes especiales: estrella dorada (crítico) o confeti (cumpleaños) encima del bocadillo.
+    if (order.special) {
+      const icon = this.add.image(half - 1, -bubbleH - 1, order.special === 'critico' ? 'icon_star' : 'icon_confetti').setOrigin(0.5);
+      if (order.special === 'cumple') icon.setScale(2).setTint(0xf28ac0);
+      bubble.add(icon);
+    }
     const parts: CustomerView['parts'] = {};
 
     if (!order.taken) {
@@ -629,6 +635,28 @@ export class KitchenScene extends Phaser.Scene {
       const a = 0.55 + 0.35 * Math.sin(time / 120);
       // Blanco si es tu puesto; rojo si es de otro compañero.
       g.lineStyle(1, mine ? 0xffffff : 0xff6b5b, a).strokeRect(t.x * TILE + 0.5, t.y * TILE + 0.5, TILE - 1, TILE - 1);
+    }
+
+    // Eventos aleatorios: la freidora averiada parpadea en rojo y echa humo; con el apagón las máquinas
+    // de bebida se quedan a oscuras; con la plancha a tope, las planchas brillan.
+    const inc = this.sim.incident;
+    if (inc) {
+      const blink = Math.floor(time / 250) % 2 === 0;
+      for (const row of this.sim.kitchen.tiles) {
+        for (const tile of row) {
+          const px = tile.x * TILE;
+          const py = tile.y * TILE;
+          if (inc.kind === 'averia' && inc.station === `${tile.x},${tile.y}`) {
+            g.fillStyle(0xe5483a, blink ? 0.45 : 0.2).fillRect(px, py, TILE, TILE);
+            g.lineStyle(2, 0xffffff, 0.9).lineBetween(px + 4, py + 4, px + 12, py + 12).lineBetween(px + 12, py + 4, px + 4, py + 12);
+            if (Math.random() < 0.06) this.puff(px + 4 + Math.random() * 8, py + 4, 0x555555, 0.8);
+          } else if (inc.kind === 'apagon' && tile.kind === 'drinks') {
+            g.fillStyle(0x000000, 0.55).fillRect(px, py, TILE, TILE);
+          } else if (inc.kind === 'plancha' && tile.kind === 'grill') {
+            g.fillStyle(0xff6b1a, blink ? 0.35 : 0.18).fillRect(px, py, TILE, TILE);
+          }
+        }
+      }
     }
 
     for (const [k, view] of this.stations) {

@@ -15,6 +15,7 @@ import {
   type TileKind,
 } from './kitchen';
 import { levelParams, RECIPE_LEVEL, type LevelParams } from './levels';
+import { INCIDENT_KINDS, INCIDENT_WARNING, INCIDENTS, type ActiveIncident, type IncidentKind } from './incidents';
 import { perkCount } from './perks';
 import { DEFAULT_LOOK, type ChefLook } from './looks';
 import { getRecipe, type Ingredient } from './recipes';
@@ -143,6 +144,8 @@ export interface Order {
   slot: number;
   /** Aspecto del cliente. */
   look: number;
+  /** Cliente especial de un evento: crítico o cumpleaños (paga el triple). */
+  special?: 'critico' | 'cumple';
 }
 
 export interface TurnStats {
@@ -175,7 +178,11 @@ export type SimEvent =
   | { type: 'burnt'; x: number; y: number; what: 'carne' | 'patatas'; cost: number }
   | { type: 'end'; reason: EndReason }
   /** Campaña: la caja (o el refresco) se ha quedado sin existencias. */
-  | { type: 'empty'; playerId: string; item: string };
+  | { type: 'empty'; playerId: string; item: string }
+  /** Eventos aleatorios: aviso, empieza o acaba (la inspección dice si fue limpia y su premio). */
+  | { type: 'incident'; kind: IncidentKind; phase: 'soon' | 'start' | 'end'; ok?: boolean; bonus?: number }
+  | { type: 'repair'; x: number; y: number; left: number }
+  | { type: 'blocked'; playerId: string; kind: IncidentKind };
 
 export type EndReason = 'time' | 'reputation';
 
@@ -190,6 +197,8 @@ export interface SimSnapshot {
   contest: boolean;
   /** Cocina en la que se juega (barrio o puerto). */
   map: KitchenId;
+  /** Evento aleatorio en marcha. */
+  incident: ActiveIncident | null;
   stock: Record<string, number> | null;
   money: number;
   reputation: number;
@@ -237,6 +246,11 @@ export class KitchenSim {
   private forgiven: Record<string, number> = {};
   private nextId = 1;
   private spawns: { x: number; y: number }[];
+  /** Eventos de la ronda: cuándo (fracción de la ronda) y si ya se han avisado o empezado. */
+  private incidentPlan: { kind: IncidentKind; at: number; warned: boolean; started: boolean }[] = [];
+  incident: ActiveIncident | null = null;
+  /** Cliente especial (crítico, cumpleaños) esperando a que haya hueco en la calle. */
+  private pendingSpecial: 'critico' | 'cumple' | null = null;
   private spawnTimer: number;
   private events: SimEvent[] = [];
 
@@ -268,6 +282,8 @@ export class KitchenSim {
         }
       }
     }
+    // Con la cocina ya montada (la avería necesita saber dónde están las freidoras).
+    this.planIncidents(params.incidents ?? 0);
   }
 
   get timeLeft(): number {
@@ -405,9 +421,10 @@ export class KitchenSim {
       case 'trash':
         if (held) {
           p.holding = null;
-          this.money -= CONFIG.trashCost;
+          const cost = CONFIG.trashCost * this.inspectionFactor();
+          this.money -= cost;
           this.stats.trashed++;
-          this.events.push({ type: 'trash', cost: CONFIG.trashCost, x: t.x, y: t.y });
+          this.events.push({ type: 'trash', cost, x: t.x, y: t.y });
         }
         return;
 
@@ -429,6 +446,10 @@ export class KitchenSim {
 
       case 'grill':
       case 'fryer':
+        if (this.incident?.station === key(t.x, t.y)) {
+          this.repair(t.x, t.y);
+          return;
+        }
         if (!held && st.item) {
           p.holding = st.item;
           st.item = null;
@@ -451,6 +472,11 @@ export class KitchenSim {
         return;
 
       case 'drinks':
+        // Apagón: las máquinas no funcionan (se puede recoger un vaso que ya estuviera lleno).
+        if (this.incident?.kind === 'apagon' && !(st.item?.kind === 'drink' && st.item.fill >= 1)) {
+          this.events.push({ type: 'blocked', playerId: p.id, kind: 'apagon' });
+          return;
+        }
         // Con las manos vacías: se pone un vaso a llenar, y cuando está lleno se recoge.
         if (!held && !st.item) {
           if (!this.take('refresco', p.id)) return;
@@ -496,16 +522,19 @@ export class KitchenSim {
     this.time += dt;
 
     if (this.moveOnTick) for (const p of this.players.values()) this.stepPlayer(p, dt);
+    this.updateIncidents();
     this.cook(dt);
 
     for (const order of [...this.orders]) {
       order.patience -= dt;
       if (order.patience <= 0) {
         this.orders = this.orders.filter((o) => o !== order);
+        // Si el crítico se va enfadado, lo cuenta en su columna: mucha más reputación perdida.
+        const penalty = CONFIG.lostRepPenalty + (order.special === 'critico' ? 7 : 0);
         this.money -= CONFIG.lostMoneyPenalty;
-        this.reputation -= CONFIG.lostRepPenalty;
+        this.reputation -= penalty;
         this.stats.lost++;
-        this.events.push({ type: 'lost', orderId: order.id, slot: order.slot, penalty: CONFIG.lostRepPenalty });
+        this.events.push({ type: 'lost', orderId: order.id, slot: order.slot, penalty });
       }
     }
 
@@ -513,8 +542,11 @@ export class KitchenSim {
     if (this.orders.length === 0) this.spawnTimer = Math.min(this.spawnTimer, 2);
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
-      if (this.orders.length < this.params.maxOrders) this.spawnOrder();
-      this.spawnTimer = lerp(this.params.spawnStart, this.params.spawnEnd, this.progress);
+      // Con el autobús de turistas se llenan todos los huecos de la calle.
+      const limit = this.incident?.kind === 'autobus' ? CUSTOMER_SLOTS_X.length : this.params.maxOrders;
+      if (this.orders.length < limit || this.pendingSpecial) this.spawnOrder();
+      // Autobús de turistas: los clientes llegan casi seguidos.
+      this.spawnTimer = lerp(this.params.spawnStart, this.params.spawnEnd, this.progress) * (this.incident?.kind === 'autobus' ? 0.35 : 1);
     }
 
     if (this.reputation <= 0) this.finish('reputation');
@@ -530,6 +562,7 @@ export class KitchenSim {
       day: this.day,
       contest: this.contest,
       map: this.map,
+      incident: this.incident,
       stock: this.stock,
       money: this.money,
       reputation: this.reputation,
@@ -554,6 +587,7 @@ export class KitchenSim {
     this.goal = s.goal;
     this.day = s.day;
     this.contest = s.contest;
+    this.incident = s.incident;
     this.stock = s.stock;
     this.money = s.money;
     this.reputation = s.reputation;
@@ -630,6 +664,9 @@ export class KitchenSim {
       const [x, y] = k.split(',').map(Number);
       const kind = this.tile(x, y)?.kind;
 
+      // Freidora averiada: no avanza hasta que la arreglen. Apagón: las bebidas tampoco.
+      if (this.incident?.station === k) continue;
+      if (kind === 'drinks' && this.incident?.kind === 'apagon') continue;
       if (kind === 'drinks' && item.kind === 'drink' && item.fill < 1) {
         item.fill = Math.min(1, item.fill + (dt * st.rate) / CONFIG.fillTime);
         if (item.fill >= 1) this.events.push({ type: 'filled', x, y });
@@ -637,8 +674,10 @@ export class KitchenSim {
       }
       if (kind !== 'grill' && kind !== 'fryer') continue;
       const grill = kind === 'grill';
-      const cookTime = (grill ? CONFIG.cookTime : CONFIG.fryTime) / st.rate;
-      const burnTime = (grill ? CONFIG.burnTime : CONFIG.fryBurnTime) * st.burnRate;
+      // Plancha a tope: la carne se hace antes y se quema antes.
+      const hot = grill && this.incident?.kind === 'plancha';
+      const cookTime = ((grill ? CONFIG.cookTime : CONFIG.fryTime) / st.rate) / (hot ? 1.6 : 1);
+      const burnTime = (grill ? CONFIG.burnTime : CONFIG.fryBurnTime) * st.burnRate * (hot ? 0.6 : 1);
 
       if (item.kind === 'raw' || item.kind === 'potatoes') {
         item.cook += dt;
@@ -652,7 +691,7 @@ export class KitchenSim {
         if (st.overcook >= burnTime) {
           const what = grill ? 'carne' : 'patatas';
           st.item = { kind: 'burnt', what };
-          const cost = this.upgrades.includes('extintor') ? 0 : CONFIG.burnCost;
+          const cost = (this.upgrades.includes('extintor') ? 0 : CONFIG.burnCost) * this.inspectionFactor();
           this.money -= cost;
           this.stats.burnt++;
           this.events.push({ type: 'burnt', x, y, what, cost });
@@ -693,11 +732,12 @@ export class KitchenSim {
         this.events.push({ type: 'wrong', penalty: 0, x: at.x, y: at.y });
         return true;
       }
-      this.money -= CONFIG.wrongMoneyPenalty;
-      this.reputation -= CONFIG.wrongRepPenalty;
+      const f = this.inspectionFactor();
+      this.money -= CONFIG.wrongMoneyPenalty * f;
+      this.reputation -= CONFIG.wrongRepPenalty * f;
       this.stats.wrong++;
       this.playerStats[by].mistakes++;
-      this.events.push({ type: 'wrong', penalty: CONFIG.wrongMoneyPenalty, x: at.x, y: at.y });
+      this.events.push({ type: 'wrong', penalty: CONFIG.wrongMoneyPenalty * f, x: at.x, y: at.y });
       if (this.reputation <= 0) this.finish('reputation');
       return true;
     }
@@ -736,7 +776,10 @@ export class KitchenSim {
       (order.drink ? (pr?.drink ?? CONFIG.drinkPrice) : 0);
     const ratio = order.patience / order.maxPatience;
     const perfect = ratio >= CONFIG.perfectThreshold;
-    const earned = Math.round(price * (0.6 + 0.4 * ratio));
+    // Crítico y cumpleaños pagan el triple; el crítico, si sale perfecto, da mucha reputación.
+    const mult = order.special ? 3 : 1;
+    const earned = Math.round(price * (0.6 + 0.4 * ratio)) * mult;
+    if (order.special === 'critico' && perfect) this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 6);
     const tip = perfect ? Math.ceil(price * 0.3) * (this.upgrades.includes('tarro') ? 2 : 1) : 0;
 
     this.orders = this.orders.filter((o) => o !== order);
@@ -757,6 +800,11 @@ export class KitchenSim {
     const free = CUSTOMER_SLOTS_X.map((_, i) => i).filter((i) => !used.has(i));
     if (free.length === 0) return;
     const slot = free[Math.floor(this.random() * free.length)];
+    if (this.pendingSpecial) {
+      this.spawnSpecial(this.pendingSpecial, slot);
+      this.pendingSpecial = null;
+      return;
+    }
     const { recipes } = this.params;
     // Una receta recién estrenada (hace 2 niveles o menos) sale algo más, para que se note la novedad.
     const fresh = recipes[recipes.length - 1];
@@ -785,6 +833,121 @@ export class KitchenSim {
       maxPatience,
       slot,
       look: Math.floor(this.random() * 1000),
+    };
+    this.orders.push(order);
+    this.events.push({ type: 'newOrder', orderId: order.id });
+  }
+
+  // ---------------------------------------------------------------- eventos aleatorios
+
+  /** Reparte los eventos de la ronda entre el 25 % y el 85 % del tiempo, sin repetir tipo. */
+  private planIncidents(n: number): void {
+    const kinds = [...INCIDENT_KINDS].filter((k) => k !== 'averia' || this.hasTile('fryer'));
+    for (let i = 0; i < n && kinds.length; i++) {
+      const kind = kinds.splice(Math.floor(this.random() * kinds.length), 1)[0];
+      const at = 0.25 + (0.6 * (i + 0.5)) / n + (this.random() - 0.5) * 0.08;
+      this.incidentPlan.push({ kind, at, warned: false, started: false });
+    }
+  }
+
+  private hasTile(kind: TileKind): boolean {
+    return this.kitchen.tiles.some((row) => row.some((t) => t.kind === kind));
+  }
+
+  /** Inspección: los fallos cuentan el doble (y estropean el premio). */
+  private inspectionFactor(): number {
+    if (this.incident?.kind !== 'inspeccion') return 1;
+    this.incident.clean = false;
+    return 2;
+  }
+
+  private updateIncidents(): void {
+    for (const plan of this.incidentPlan) {
+      const at = plan.at * this.turnDuration;
+      if (!plan.warned && this.time >= at - INCIDENT_WARNING) {
+        plan.warned = true;
+        this.events.push({ type: 'incident', kind: plan.kind, phase: 'soon' });
+      }
+      if (!plan.started && this.time >= at && !this.incident) {
+        plan.started = true;
+        this.startIncident(plan.kind);
+      }
+    }
+    if (this.incident && this.time >= this.incident.until) this.endIncident(true);
+  }
+
+  private startIncident(kind: IncidentKind): void {
+    const def = INCIDENTS[kind];
+    this.events.push({ type: 'incident', kind, phase: 'start' });
+    if (kind === 'critico' || kind === 'cumple') {
+      // Un cliente especial: llega en cuanto haya hueco en la calle.
+      this.pendingSpecial = kind;
+      this.spawnTimer = Math.min(this.spawnTimer, 0.5);
+      return;
+    }
+    this.incident = { kind, until: this.time + def.duration };
+    if (kind === 'autobus') this.spawnTimer = Math.min(this.spawnTimer, 1);
+    if (kind === 'inspeccion') this.incident.clean = true;
+    if (kind === 'averia') {
+      const fryers = [...this.stations.keys()].filter((k) => {
+        const [x, y] = k.split(',').map(Number);
+        return this.tile(x, y)?.kind === 'fryer';
+      });
+      this.incident.station = fryers[Math.floor(this.random() * fryers.length)];
+      this.incident.repairs = 0;
+    }
+  }
+
+  /** Fin del evento. La freidora se arregla sola al acabar el tiempo; la inspección limpia da premio. */
+  private endIncident(timeUp: boolean): void {
+    const inc = this.incident;
+    if (!inc) return;
+    this.incident = null;
+    if (inc.kind === 'inspeccion') {
+      const ok = inc.clean !== false;
+      if (ok) {
+        this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 5);
+        this.money += 10;
+      }
+      this.events.push({ type: 'incident', kind: inc.kind, phase: 'end', ok, bonus: ok ? 10 : 0 });
+      return;
+    }
+    this.events.push({ type: 'incident', kind: inc.kind, phase: 'end', ok: inc.kind === 'averia' ? !timeUp : true });
+  }
+
+  /** Freidora averiada: cada pulsación delante la arregla un poco (3 en total). */
+  private repair(x: number, y: number): void {
+    const inc = this.incident!;
+    inc.repairs = (inc.repairs ?? 0) + 1;
+    const left = Math.max(0, 3 - inc.repairs);
+    this.events.push({ type: 'repair', x, y, left });
+    if (left === 0) this.endIncident(false);
+  }
+
+  /** Cliente especial: el crítico pide la hamburguesa más grande y tiene poca paciencia; el cumpleaños, menú completo. */
+  private spawnSpecial(kind: 'critico' | 'cumple', slot: number): void {
+    const recipes = this.params.recipes;
+    const recipeId = [...recipes].sort((a, b) => getRecipe(b).layers.length - getRecipe(a).layers.length)[0];
+    const layers = getRecipe(recipeId).layers.length;
+    const fries = kind === 'cumple';
+    const drink: Flavor | null = kind === 'cumple' ? 'naranja' : null;
+    const sides = (fries ? 1 : 0) + (drink ? 1 : 0);
+    const maxPatience =
+      (CONFIG.patienceBase + layers * CONFIG.patiencePerLayer + sides * CONFIG.patiencePerSide) *
+      this.params.patience *
+      (kind === 'critico' ? 0.6 : 1.5);
+    const order: Order = {
+      id: this.nextId++,
+      recipeId,
+      fries,
+      drink,
+      taken: !this.needsCaja || this.players.size <= 1,
+      done: { burger: false, fries: false, drink: false },
+      patience: maxPatience,
+      maxPatience,
+      slot,
+      look: kind === 'critico' ? 7 : 4,
+      special: kind,
     };
     this.orders.push(order);
     this.events.push({ type: 'newOrder', orderId: order.id });

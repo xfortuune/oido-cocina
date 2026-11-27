@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CUSTOMER_SLOTS_X, EMOTES, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
+import { CUSTOMER_SLOTS_X, EMOTES, INCIDENTS, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { addSoundToggle } from '../ui/SoundToggle';
 import { Button } from '../ui/Button';
@@ -34,6 +34,8 @@ export class HudScene extends Phaser.Scene {
   private cajaHint?: Phaser.GameObjects.Text;
   private rolesKey = '';
   private levelText?: Phaser.GameObjects.Text;
+  /** Evento aleatorio en marcha: nombre y segundos que le quedan, arriba en el centro de la cocina. */
+  private incidentText?: Phaser.GameObjects.Text;
   /** Tus habilidades, debajo de tus puestos. */
   private perksText?: Phaser.GameObjects.Text;
   private perksKey = '';
@@ -142,6 +144,14 @@ export class HudScene extends Phaser.Scene {
     this.syncTickets(sim.orders.filter((o) => o.taken));
     this.syncNameTags();
     this.syncEmotes();
+    const inc = sim.incident;
+    if (this.incidentText) {
+      if (inc && !net.paused) {
+        const left = Math.max(0, Math.ceil(inc.until - sim.time));
+        const extra = inc.kind === 'averia' ? ` · faltan ${3 - (inc.repairs ?? 0)} arreglos` : '';
+        this.incidentText.setText(`${INCIDENTS[inc.kind].name} · ${left} s${extra}`).setVisible(true);
+      } else this.incidentText.setVisible(false);
+    }
 
     const waiting = sim.orders.some((o) => !o.taken);
     const isCaja = this.kitchen.localPlayer?.roles.includes('caja') ?? false;
@@ -233,6 +243,14 @@ export class HudScene extends Phaser.Scene {
       chat.on('pointerdown', () => this.toggleEmoteMenu());
     }
     else addSoundToggle(this, L.kitchen.x + L.kitchen.w - 18, L.kitchen.y + L.kitchen.h - 14, 2, 30);
+    this.incidentText = txt(this, L.kitchen.x + L.kitchen.w / 2, L.kitchen.y + L.kitchen.h - 6, '', 14, {
+      color: '#2b1d14',
+      backgroundColor: '#ffc93c',
+      padding: { x: 6, y: 3 },
+    })
+      .setOrigin(0.5, 1)
+      .setDepth(7)
+      .setVisible(false);
     this.levelText = txt(this, L.kitchen.x + L.kitchen.w - 6, L.kitchen.y + 4, '', 13, {
       color: '#ffc93c',
       backgroundColor: '#2b1d14aa',
@@ -384,6 +402,21 @@ export class HudScene extends Phaser.Scene {
       return txt(this, cx - 2, r.h / 2 - 2, '', fs, { color: '#fff4dc' }).setOrigin(0, 0.5);
     };
     this.hud = { time: mk(0, 'icon_clock'), money: mk(1, 'icon_coin'), rep: mk(2, 'icon_star'), served: mk(3, 'icon_burger') };
+  }
+
+  /** Cartel de un evento aleatorio (aviso o comienzo), en el centro de la cocina. */
+  private incidentBanner(title: string, sub: string, color: string): void {
+    const L = this.L;
+    const cx = L.kitchen.x + L.kitchen.w / 2;
+    const cy = L.kitchen.y + L.kitchen.h * 0.32;
+    const t = txt(this, cx, cy, title, clamp(L.kitchen.w * 0.06, 22, 40), { color, stroke: '#2b1d14', strokeThickness: 7, align: 'center', wordWrap: { width: L.kitchen.w - 20 } })
+      .setOrigin(0.5, 1)
+      .setDepth(21);
+    const d = txt(this, cx, cy + 4, sub, clamp(L.kitchen.w * 0.03, 15, 20), { color: '#fff4dc', stroke: '#2b1d14', strokeThickness: 5, align: 'center', wordWrap: { width: L.kitchen.w - 20 } })
+      .setOrigin(0.5, 0)
+      .setDepth(21);
+    this.tweens.add({ targets: t, scale: { from: 0.5, to: 1 }, duration: 260, ease: 'Back.Out' });
+    this.tweens.add({ targets: [t, d], alpha: 0, delay: 2400, duration: 400, onComplete: () => { t.destroy(); d.destroy(); } });
   }
 
   /** Cartel al empezar la ronda: nivel, objetivo y receta nueva si la hay. */
@@ -589,12 +622,14 @@ export class HudScene extends Phaser.Scene {
     const container = this.add.container(0, 0);
     const g = this.add.graphics();
     pixelPanel(g, 0, 0, w, h, COLORS.panel, 2);
-    g.fillStyle(COLORS.orange).fillRect(4, 2, w - 8, 15);
+    // Crítico (dorado) y cumpleaños (rosa) se distinguen en la comanda.
+    g.fillStyle(order.special === 'critico' ? 0xd4a017 : order.special === 'cumple' ? 0xf28ac0 : COLORS.orange).fillRect(4, 2, w - 8, 15);
     container.add(g);
     // Mismo número que el bocadillo del cliente en la calle.
     g.fillStyle(0xffffff).fillRect(4, 2, 12, 15);
     container.add(this.add.image(7, 4, `digit_${order.slot + 1}`).setOrigin(0).setScale(2));
-    const name = txt(this, w / 2 + 8, 9, recipe.name, 12, { color: '#ffffff' }).setOrigin(0.5);
+    const label = order.special === 'critico' ? `Crítico ×3 · ${recipe.name}` : order.special === 'cumple' ? `Cumple ×3 · ${recipe.name}` : recipe.name;
+    const name = txt(this, w / 2 + 8, 9, label, 12, { color: '#ffffff' }).setOrigin(0.5);
     if (name.width > w - 26) name.setScale((w - 26) / name.width);
     container.add(name);
 
@@ -676,6 +711,44 @@ export class HudScene extends Phaser.Scene {
         this.popup(at.x, at.y, '¡Nota tomada!', '#ffffff');
         break;
       }
+      case 'incident': {
+        const def = INCIDENTS[ev.kind];
+        if (ev.phase === 'soon') {
+          audio.sfx('alarm');
+          this.incidentBanner(`¡Atención! ${def.name}`, 'En unos segundos…', '#ffc93c');
+        } else if (ev.phase === 'start') {
+          this.incidentBanner(def.name, def.description, '#ff8a3d');
+        } else {
+          const L = this.L;
+          const msg =
+            ev.kind === 'inspeccion'
+              ? ev.ok
+                ? `¡Inspección superada! +${ev.bonus} y +5 de reputación`
+                : 'Inspección con fallos: sin premio'
+              : ev.kind === 'averia'
+                ? ev.ok
+                  ? '¡Freidora arreglada!'
+                  : 'Ha venido el técnico: freidora arreglada'
+                : `Fin: ${def.name.toLowerCase()}`;
+          this.popup(L.kitchen.x + L.kitchen.w / 2, L.kitchen.y + L.kitchen.h * 0.5, msg, ev.ok === false ? '#ff6b5b' : '#7ee081');
+          if (ev.ok) audio.sfx('coin');
+        }
+        break;
+      }
+      case 'repair': {
+        const at = this.kitchen.worldToScreen(ev.x + 0.5, ev.y);
+        this.popup(at.x, at.y, ev.left ? `¡Arreglando! Faltan ${ev.left}` : '¡Arreglada!', '#ffffff');
+        audio.sfx(ev.left ? 'drop' : 'cooked');
+        break;
+      }
+      case 'blocked':
+        if (ev.playerId === net.id) {
+          const me = this.kitchen.localPlayer;
+          const at = me ? this.kitchen.worldToScreen(me.x, me.y - 1.2) : { x: this.L.W / 2, y: this.L.H / 2 };
+          this.popup(at.x, at.y, '¡Apagón! Las bebidas no funcionan', '#ff6b5b');
+          audio.sfx('denied');
+        }
+        break;
       case 'empty':
         if (ev.playerId === net.id) {
           const me = this.kitchen.localPlayer;

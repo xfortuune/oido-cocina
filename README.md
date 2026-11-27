@@ -363,6 +363,24 @@ En la sala, antes de empezar la partida (nivel 1), cualquiera puede elegir el mo
   Para compensar, los clientes llegan un **20 % más rápido** y el objetivo de pedidos es algo mayor.
   En el ranking, estas partidas salen marcadas con «(libre)». En solitario el modo no cambia nada.
 
+### Eventos aleatorios
+
+A mitad de la ronda pasan cosas, con un cartel de aviso unos segundos antes y un contador mientras duran.
+Hay 1 por ronda desde el nivel 4 del Desafío (en la campaña, desde el día 7), 2 desde el 10 y 3 desde el 16.
+En los concursos no hay eventos.
+
+| Evento | Qué pasa |
+|---|---|
+| Autobús de turistas | 20 s de clientes casi seguidos (se llenan todos los huecos de la calle) |
+| Freidora averiada | Una freidora no funciona hasta que alguien pulsa acción delante 3 veces (o pasan 30 s) |
+| Apagón de bebidas | 20 s sin máquinas de bebida |
+| Plancha a tope | 20 s en los que la carne se hace antes… y se quema antes |
+| Inspección sanitaria | 25 s en los que los fallos cuentan el doble; sin fallos, +10 y +5 de reputación |
+| Crítico gastronómico | Un cliente con poca paciencia que paga el triple; perfecto, +6 de reputación; si se va, -15 |
+| Cumpleaños | Un menú completo que paga el triple y tiene más paciencia |
+
+Están en `shared/src/incidents.ts` y la lógica en `sim.ts`.
+
 ### Pausa
 
 Escape (o el botón de pausa) **para la ronda para todo el grupo**: el reloj, los clientes y los fogones se quedan

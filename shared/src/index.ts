@@ -8,3 +8,4 @@ export * from './shop';
 export * from './looks';
 export * from './campaign';
 export * from './progress';
+export * from './incidents';

@@ -26,7 +26,8 @@ export type Sfx =
   | 'levelUp'
   | 'runOver'
   | 'perk'
-  | 'emote';
+  | 'emote'
+  | 'alarm';
 
 export type MusicMode = 'menu' | 'kitchen' | null;
 
@@ -318,6 +319,10 @@ class GameAudio {
         (tunes[n] ?? tunes[0]).forEach((m, i) => this.pluck(midi(m), t + i * 0.07, 0.12, 0.09, bus));
         break;
       }
+      case 'alarm':
+        // Aviso de evento: dos tonos que suben, como un timbre.
+        [0, 0.16, 0.32].forEach((d, i) => this.bell(midi(i % 2 ? 84 : 88), t + d, 0.09));
+        break;
       case 'perk':
         [91, 96, 100, 103].forEach((m, i) => this.bell(midi(m), t + i * 0.05, 0.06));
         break;

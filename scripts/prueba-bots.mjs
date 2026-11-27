@@ -272,6 +272,18 @@ await solo.room.leave();
   await ro.room.leave();
 }
 
+// Eventos aleatorios: desde el nivel 4 hay al menos uno por ronda, con aviso antes.
+{
+  const ev = await bot('Eva', { sala: `eventos-${Date.now()}`, modo: 1, nivel: 5, turno: 30 });
+  ev.room.send('start');
+  while (!ev.summary) await wait(300);
+  const inc = ev.events.filter((e) => e.type === 'incident');
+  const soon = inc.find((e) => e.phase === 'soon');
+  const start = inc.find((e) => e.phase === 'start');
+  check(soon && start && soon.kind === start.kind && inc.indexOf(soon) < inc.indexOf(start), `Nivel 5: evento «${start?.kind}» con aviso antes`);
+  await ev.room.leave();
+}
+
 // Partida en solitario desde el nivel 2: el bot cocina dos Chispas, supera el nivel,
 // elige habilidad, y al perder el nivel 3 vuelve al 1 sin habilidades.
 const chef = await bot('Chef', { sala: `perk-${Date.now()}`, modo: 1, nivel: 2, turno: 60, grupo: `bots${Date.now()}` });

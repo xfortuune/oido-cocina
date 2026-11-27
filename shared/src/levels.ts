@@ -2,6 +2,7 @@
 // El ritmo también depende de cuántos cocineros sois: con más gente llegan más clientes a la vez,
 // y jugando solo (que lo haces todo) los clientes esperan un poco más.
 
+import { incidentsForLevel } from './incidents';
 import { RECIPES } from './recipes';
 
 export const MAX_LEVEL = 20;
@@ -34,6 +35,8 @@ export interface LevelParams {
   recipes: string[];
   /** Pedidos que hay que servir para pasar de nivel. */
   goal: number;
+  /** Eventos aleatorios en la ronda (incidents.ts). */
+  incidents: number;
 }
 
 /** Cuántos clientes más llegan según el número de cocineros. */
@@ -74,7 +77,7 @@ export function levelParams(level: number, players: number, estilo: Estilo = 'ro
   const expected = Math.min(duration / ((spawnStart + spawnEnd) / 2), (duration / 25) * maxOrders);
   const goal = Math.max(2, Math.round(expected * 0.55));
 
-  return { level, players, duration, spawnStart, spawnEnd, maxOrders, patience, sideChance, recipes, goal };
+  return { level, players, duration, spawnStart, spawnEnd, maxOrders, patience, sideChance, recipes, goal, incidents: incidentsForLevel(level) };
 }
 
 /** Recetas que aparecen por primera vez en este nivel. */

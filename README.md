@@ -305,6 +305,31 @@ delante en cada franquicia nueva):
 
 Las ciudades completadas quedan en el salón de la fama.
 
+### Personal con nombre y carácter
+
+Cada empleado contratado tiene nombre y un carácter: **Incansable** (se cansa la mitad), **Simpático** (+1 de
+reputación al día), **Ahorrador** (cobra 3 menos), **Dormilón** (algún día no viene) o **Veterano** (nunca pide
+aumento). Trabajar cansa: con mucho cansancio no trabaja y, si llega al límite, se va. Se le pueden dar **dos días de
+vacaciones** (cobra igual y vuelve descansado). Cada 10 días trabajados pide un **aumento** (+3 al día); si se le dice
+que no, se cansa más. Todo se ve en «Personal» y las novedades salen en el cierre.
+
+### Proveedores con contrato
+
+En «Despensa → Proveedores» se firma una semana con un proveedor: **Low-Cost** (25 % más barato, pero uno de cada
+cuatro días el camión no llega y no se puede comprar), **Hermanos Puntuales** (15 % más caro, todo dura un día más) o
+**Huerta Ecológica** (30 % más caro, +2 de reputación al día). Sin contrato, el mercado del barrio.
+
+### El Diario del Barrio
+
+Cada lunes por la mañana sale el periódico: titular de la semana, servidos y resultado, el mejor día, la reputación
+(y la del rival), un cotilleo del barrio y la previsión del tiempo de los siete días. Está en `shared/src/newspaper.ts`.
+
+### Inspector de sanidad
+
+Más o menos una vez por capítulo (la primera, el día 5) viene el inspector sin avisar; se sabe al empezar el
+servicio. Según cómo vaya (perdidos, equivocados, quemados) pone una nota que se cuelga junto al pase y se ve en
+«Hoy»: **A** (+12 % de clientes y +3 de reputación), **B** o **C** (−15 % de clientes y −3) hasta la siguiente visita.
+
 ## Cómo se juega
 
 ### Modos

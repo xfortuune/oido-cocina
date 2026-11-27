@@ -365,6 +365,17 @@ export class KitchenScene extends Phaser.Scene {
       const walls = k.tiles.flat().filter((t) => t.kind === 'wall' && t.x === 0 && t.y > 4).slice(0, 2);
       for (const t of walls) at('deco_cuadro', t.x * TILE + 8, t.y * TILE + 12, 3);
     }
+    // Campaña: la nota del inspector de sanidad, colgada junto al pase.
+    const grade = info?.juego === 'campana' ? info.campana?.inspection?.grade : null;
+    if (grade) {
+      const pase = k.tiles.flat().find((t) => t.kind === 'pase');
+      if (pase) {
+        const gx = (pase.x - 0.5) * TILE;
+        const gy = pase.y * TILE + 5;
+        this.add.rectangle(gx, gy, 11, 11, 0xffffff).setStrokeStyle(1, 0x2b1d14).setDepth(31);
+        this.add.text(gx, gy + 0.5, grade, { fontFamily: 'monospace', fontSize: '9px', color: grade === 'A' ? '#2e8a34' : grade === 'B' ? '#d9a01c' : '#c0392b' }).setOrigin(0.5).setDepth(32).setResolution(4);
+      }
+    }
     if (has('tarro')) {
       const pase = k.tiles.flat().find((t) => t.kind === 'pase');
       if (pase) at('deco_tarro', pase.x * TILE + 3, pase.y * TILE + 6, 12 + pase.y * TILE);

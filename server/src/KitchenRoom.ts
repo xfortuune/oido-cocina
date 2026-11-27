@@ -67,6 +67,9 @@ import {
   weatherDay,
   decide,
   openFranchise,
+  giveVacation,
+  answerRaise,
+  signSupplier,
   type RoundRecord,
   type VersusScore,
 } from '@hora-punta/shared';
@@ -456,6 +459,9 @@ export class KitchenRoom extends Room {
       this.broadcastRoom();
     };
     this.onMessage('c:buy', (_cl, id: string) => manage((c) => buyStock(c, String(id) as StockId)));
+    this.onMessage('c:vacation', (_cl, id: string) => manage((c) => giveVacation(c, String(id))));
+    this.onMessage('c:raise', (_cl, m: { id: string; yes: boolean }) => manage((c) => answerRaise(c, String(m?.id), !!m?.yes)));
+    this.onMessage('c:supplier', (_cl, id: string) => manage((c) => signSupplier(c, String(id))));
     this.onMessage('c:decide', (_cl, n: number) => manage((c) => decide(c, Number(n))));
     // Franquicia: con la campaña completada, se abre un restaurante nuevo en otra ciudad.
     this.onMessage('c:franquicia', (_cl, city: string) => {

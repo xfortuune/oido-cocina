@@ -15,3 +15,4 @@ export * from './barrio';
 export * from './reviews';
 export * from './analysis';
 export * from './season';
+export * from './newspaper';

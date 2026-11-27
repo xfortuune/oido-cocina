@@ -17,7 +17,6 @@ import {
   TRAINABLE,
   XP_PER_POINT,
   decorAppeal,
-  hasStaff,
   LOCAL_UPGRADES,
   STAFF,
   wagesPerDay,
@@ -43,6 +42,15 @@ import {
   stockCount,
   weekday,
   CITIES,
+  isHired,
+  TRAITS,
+  wageOf,
+  SUPPLIERS,
+  supplierOf,
+  supplierFailsToday,
+  CONTRACT_DAYS,
+  GRADE_DEMAND,
+  type SupplierId,
   isNightShift,
   weatherDay,
   type CityId,
@@ -108,6 +116,9 @@ export class CampaignScene extends Phaser.Scene {
   private status = '';
   /** Ventana de franquicias abierta. */
   private franchiseOpen = false;
+  /** Ventana de proveedores abierta y el último periódico ya leído (día). */
+  private supplierOpen = false;
+  private paperSeen = 0;
 
   constructor() {
     super('campaign');
@@ -287,6 +298,8 @@ export class CampaignScene extends Phaser.Scene {
 
     // Encima de todo: la decisión del barrio (hay que elegir antes de abrir) o las franquicias.
     if (c.dilemma) this.dilemmaModal(c, W, H, s);
+    else if (c.newspaper && c.newspaper.day === c.day && this.paperSeen !== c.day) this.newspaperModal(c, W, H, s);
+    else if (this.supplierOpen) this.supplierModal(c, W, H, s);
     else if (this.franchiseOpen && c.finished) this.franchiseModal(c, W, H, s);
   }
 
@@ -324,6 +337,103 @@ export class CampaignScene extends Phaser.Scene {
       const hint = txt(this, W / 2, y + optH * 0.68, o.hint, fs * 0.72, { color: '#fff4dc' }).setOrigin(0.5);
       if (hint.width > boxW - 50) hint.setScale((boxW - 50) / hint.width);
       y += optH + 10;
+    });
+  }
+
+  /** El Diario del Barrio: sale los lunes con la semana, un cotilleo y la previsión. */
+  private newspaperModal(c: Campaign, W: number, H: number, s: number): void {
+    const p = c.newspaper!;
+    this.modalBack(W, H);
+    const boxW = Math.min(W - 20, 480);
+    const x0 = W / 2 - boxW / 2;
+    const fs = clamp(14 * s, 12, 17);
+    const g = this.add.graphics();
+    const y0 = Math.max(8, H * 0.05);
+    const h = Math.min(H - 2 * y0, 640 * s);
+    pixelPanel(g, x0, y0, boxW, h, 0xf4efe4);
+    let y = y0 + 10;
+    txt(this, W / 2, y, 'EL DIARIO DEL BARRIO', fs * 1.6, { color: '#2b1d14' }).setOrigin(0.5, 0);
+    y += fs * 2;
+    txt(this, W / 2, y, `Lunes, día ${p.day} · ${CITIES[c.city].name}`, fs * 0.75, { color: '#6b5a4a' }).setOrigin(0.5, 0);
+    y += fs * 1.3;
+    g.fillStyle(0x2b1d14).fillRect(x0 + 12, y, boxW - 24, 2);
+    y += 10;
+    const head = txt(this, W / 2, y, p.headline, fs * 1.25, { color: '#2b1d14', align: 'center', wordWrap: { width: boxW - 30 } }).setOrigin(0.5, 0);
+    y += head.height + 10;
+    for (const line of p.lines) {
+      const t = txt(this, x0 + 16, y, line, fs * 0.85, { color: '#4a3a2c', wordWrap: { width: boxW - 32 } });
+      y += t.height + 4;
+    }
+    y += 6;
+    g.fillStyle(0x2b1d14, 0.4).fillRect(x0 + 12, y, boxW - 24, 1);
+    y += 8;
+    txt(this, x0 + 16, y, 'Cotilleos', fs * 0.8, { color: '#8a6d1a' });
+    y += fs * 1.2;
+    const gt = txt(this, x0 + 16, y, p.gossip, fs * 0.85, { color: '#4a3a2c', wordWrap: { width: boxW - 32 } });
+    y += gt.height + 10;
+    g.fillStyle(0x2b1d14, 0.4).fillRect(x0 + 12, y, boxW - 24, 1);
+    y += 8;
+    txt(this, x0 + 16, y, 'El tiempo de la semana', fs * 0.8, { color: '#8a6d1a' });
+    y += fs * 1.3;
+    p.forecast.forEach((f, i) => {
+      txt(this, x0 + 16, y, weekday(p.day + i), fs * 0.78, { color: '#6b5a4a' });
+      txt(this, x0 + boxW - 16, y, f, fs * 0.78, { color: '#2b1d14' }).setOrigin(1, 0);
+      y += fs * 1.25;
+    });
+    new Button(this, W / 2, Math.min(y0 + h - 28 * s, y + 30 * s), {
+      w: Math.min(220, boxW - 40),
+      h: 42 * s,
+      color: COLORS.green,
+      label: 'A trabajar',
+      fontSize: fs * 1.1,
+      onPress: () => {
+        this.paperSeen = c.day;
+        this.build();
+      },
+    });
+  }
+
+  /** Proveedores: se firma una semana con uno (mientras dura no se puede cambiar). */
+  private supplierModal(c: Campaign, W: number, H: number, s: number): void {
+    this.modalBack(W, H);
+    const boxW = Math.min(W - 24, 520);
+    const x0 = W / 2 - boxW / 2;
+    const fs = clamp(15 * s, 12, 18);
+    const ids = Object.keys(SUPPLIERS) as SupplierId[];
+    const rowH = 84 * s;
+    const h = 80 * s + ids.length * (rowH + 6) + 56 * s;
+    const y0 = Math.max(8, H / 2 - h / 2);
+    const g = this.add.graphics();
+    pixelPanel(g, x0, y0, boxW, h, 0xfff0c8);
+    txt(this, W / 2, y0 + 10, 'Proveedores', fs * 1.4, { color: '#2b1d14' }).setOrigin(0.5, 0);
+    const current = supplierOf(c);
+    const locked = current !== 'mercado';
+    txt(this, W / 2, y0 + 14 + fs * 1.7, locked ? `Contrato con ${SUPPLIERS[current].name} hasta el día ${c.supplier!.until}.` : `Los contratos duran ${CONTRACT_DAYS} días.`, fs * 0.8, {
+      color: '#4a3a2c',
+      align: 'center',
+      wordWrap: { width: boxW - 30 },
+    }).setOrigin(0.5, 0);
+    let y = y0 + 80 * s;
+    for (const id of ids) {
+      const sup = SUPPLIERS[id];
+      pixelPanel(g, x0 + 10, y, boxW - 20, rowH, id === current ? 0xd9f2d0 : COLORS.panel, 2);
+      txt(this, x0 + 22, y + 8, sup.name, fs);
+      txt(this, x0 + 22, y + 10 + fs * 1.3, sup.description, fs * 0.72, { color: '#6b5a4a', wordWrap: { width: boxW - 160 * s } });
+      if (id === current) txt(this, x0 + boxW - 22, y + rowH / 2, 'Ahora', fs * 0.85, { color: '#2e8a34' }).setOrigin(1, 0.5);
+      else if (id !== 'mercado' && !locked)
+        new Button(this, x0 + boxW - 20 - 56 * s, y + rowH / 2, { w: 104 * s, h: 38 * s, color: COLORS.green, label: 'Firmar', fontSize: fs * 0.9, onPress: () => net.campaign('c:supplier', id) });
+      y += rowH + 6;
+    }
+    new Button(this, W / 2, y + 24 * s, {
+      w: Math.min(200, boxW - 40),
+      h: 40 * s,
+      color: 0x8d6e63,
+      label: 'Cerrar',
+      fontSize: fs,
+      onPress: () => {
+        this.supplierOpen = false;
+        this.build();
+      },
     });
   }
 
@@ -411,6 +521,9 @@ export class CampaignScene extends Phaser.Scene {
       ['', w.holiday ? `¡Festivo! Más gente y propinas ×${w.tips}` : WEATHER[w.weather].hint],
       ['Mañana', `${WEATHER[weatherOf(weatherDay({ ...c, day: c.day + 1 }))].name}${holidayOf(weatherDay({ ...c, day: c.day + 1 })) ? ` · ${holidayOf(weatherDay({ ...c, day: c.day + 1 }))}` : ''}`],
       ['Clientes previstos', `unos ${expected}`],
+      ...(c.inspection?.grade
+        ? ([['Nota de sanidad', `${c.inspection.grade} (${GRADE_DEMAND[c.inspection.grade] >= 1 ? '+' : ''}${Math.round((GRADE_DEMAND[c.inspection.grade] - 1) * 100)} % clientes)`]] as [string, string][])
+        : []),
       ...(q > 0 ? ([['Despensa de calidad', `${Math.round(q * 100)} % · propinas +${Math.round(QUALITY.tips * q * 100)} %`]] as [string, string][]) : []),
       ['Hamburguesas que da la despensa', `${burgers}`],
       ['Capítulo', currentChapter(c) ? `${c.chapter}: ${currentChapter(c)!.title}` : 'todos completados'],
@@ -445,6 +558,12 @@ export class CampaignScene extends Phaser.Scene {
 
     // Avisos
     const warnings: string[] = [];
+    if (supplierFailsToday(c)) warnings.push(`El camión de ${SUPPLIERS[supplierOf(c)].name} no ha venido: hoy no se puede comprar.`);
+    for (const id of c.staff) {
+      const wk = c.workers?.[id];
+      if (wk?.wantsRaise) warnings.push(`${wk.name} pide un aumento (Personal).`);
+      else if (wk && wk.fatigue >= 85) warnings.push(`${wk.name} está agotado: dale vacaciones o se irá.`);
+    }
     if (burgers < expected) warnings.push(`La despensa no llega para unos ${expected} clientes: compra más en «Despensa».`);
     for (const st of STOCK) {
       const exp = expiringToday(c, st.id);
@@ -537,7 +656,27 @@ export class CampaignScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- pestaña: despensa
 
-  private tabPantry(c: Campaign, a: Area, s: number): void {
+  private tabPantry(c: Campaign, a0: Area, s: number): void {
+    // Arriba: el proveedor (con contrato o no) y si hoy ha venido el camión.
+    const sup = supplierOf(c);
+    const fails = supplierFailsToday(c);
+    const ht = txt(this, a0.x, a0.y + 2, fails ? `Hoy no ha venido el camión de ${SUPPLIERS[sup].name}: no se puede comprar.` : `Proveedor: ${SUPPLIERS[sup].name}${sup !== 'mercado' ? ` (hasta el día ${c.supplier!.until})` : ''}`, 13 * s, {
+      color: fails ? '#c0392b' : '#4a3a2c',
+      wordWrap: { width: a0.w - 130 * s },
+    });
+    new Button(this, a0.x + a0.w - 60 * s, a0.y + 14 * s, {
+      w: 116 * s,
+      h: 28 * s,
+      color: COLORS.blue,
+      label: 'Proveedores',
+      fontSize: 13 * s,
+      onPress: () => {
+        this.supplierOpen = true;
+        this.build();
+      },
+    });
+    const head = Math.max(ht.height, 30 * s) + 8;
+    const a = { ...a0, y: a0.y + head, h: a0.h - head };
     const rowH = Math.min(54 * s, a.h / STOCK.length);
     const fs = Math.min(15 * s, rowH * 0.32);
     STOCK.forEach((st, i) => {
@@ -686,23 +825,55 @@ export class CampaignScene extends Phaser.Scene {
   private tabStaff(c: Campaign, a: Area, s: number): void {
     const fs = 15 * s;
     const y0 = this.staffToggle(a, s);
-    txt(this, a.x, y0, `Sueldos: ${wagesPerDay(c)} al día. Se pagan al cerrar.`, fs * 0.85).setAlpha(0.7);
-    const top = y0 + fs * 1.8;
-    const rowH = Math.min(80 * s, (a.h - (top - a.y)) / STAFF.length);
+    txt(this, a.x, y0, `Sueldos: ${wagesPerDay(c)} al día. Se pagan al cerrar. Si se cansan mucho, se van.`, fs * 0.8, { wordWrap: { width: a.w } }).setAlpha(0.7);
+    const top = y0 + fs * 2.4;
+    const rowH = Math.min(92 * s, (a.h - (top - a.y)) / STAFF.length);
     STAFF.forEach((st, i) => {
       const y = top + i * rowH;
-      const hired = hasStaff(c, st.id);
-      if (hired) this.add.rectangle(a.x - 4, y, a.w + 8, rowH - 4, 0xd9f2d0).setOrigin(0);
-      txt(this, a.x + 4, y + 6, `${st.name} · ${st.wage} al día`, fs);
-      txt(this, a.x + 4, y + 6 + fs * 1.25, st.description, fs * 0.78, { wordWrap: { width: a.w - 130 * s } }).setAlpha(0.8);
-      new Button(this, a.x + a.w - 58 * s, y + rowH / 2 - 2, {
-        w: 112 * s,
-        h: 36 * s,
-        color: hired ? COLORS.red : COLORS.green,
-        label: hired ? 'Despedir' : 'Contratar',
-        fontSize: fs * 0.9,
-        onPress: () => net.campaign(hired ? 'c:fire' : 'c:hire', st.id),
-      });
+      const hired = isHired(c, st.id);
+      const w = c.workers?.[st.id];
+      const bw = 104 * s;
+      const bx = a.x + a.w - bw / 2;
+      const textW = a.w - bw - 14;
+      if (hired && w) {
+        const tired = w.fatigue >= 85;
+        this.add.rectangle(a.x - 4, y, a.w + 8, rowH - 4, tired ? 0xf8d7d0 : 0xd9f2d0).setOrigin(0);
+        const t1 = txt(this, a.x + 4, y + 5, `${w.name} · ${st.name} · ${wageOf(c, st.id)} al día`, fs);
+        if (t1.width > textW) t1.setScale(textW / t1.width);
+        const status = w.vacation > 0 ? `de vacaciones (${w.vacation} ${w.vacation === 1 ? 'día' : 'días'})` : tired ? '¡agotado! hoy no trabaja' : `${w.days} días trabajados`;
+        const t2 = txt(this, a.x + 4, y + 7 + fs * 1.2, `${TRAITS[w.trait].name}: ${TRAITS[w.trait].description}`, fs * 0.75, { color: '#4a3a2c' });
+        if (t2.width > textW) t2.setScale(textW / t2.width);
+        // Cansancio
+        const barY = y + 10 + fs * 2.2;
+        const barW = Math.min(textW, 160 * s);
+        txt(this, a.x + 4, barY - 1, 'Cansancio', fs * 0.65).setAlpha(0.6);
+        const g = this.add.graphics();
+        const bw2 = Math.min(barW, 90 * s);
+        g.fillStyle(0x2b1d14, 0.2).fillRect(a.x + 64 * s, barY, bw2, 7 * s);
+        g.fillStyle(w.fatigue >= 85 ? 0xe5483a : w.fatigue >= 50 ? 0xffa726 : 0x43b049).fillRect(a.x + 64 * s, barY, (bw2 * w.fatigue) / 100, 7 * s);
+        const st2 = txt(this, a.x + 70 * s + bw2, barY - 2, status, fs * 0.68, { color: tired ? '#c0392b' : '#4a3a2c' });
+        if (st2.width > textW - 70 * s - bw2) st2.setScale((textW - 70 * s - bw2) / st2.width);
+        const bh = Math.min(30 * s, (rowH - 12) / 2);
+        if (w.wantsRaise) {
+          txt(this, bx, y + 2, `Pide +3`, fs * 0.7, { color: '#8a6d1a' }).setOrigin(0.5, 0);
+          new Button(this, bx, y + rowH / 2 - bh / 2 + 4, { w: bw, h: bh, color: COLORS.green, label: 'Aumento', fontSize: fs * 0.8, onPress: () => net.campaign('c:raise', { id: st.id, yes: true }) });
+          new Button(this, bx, y + rowH / 2 + bh / 2 + 6, { w: bw, h: bh, color: 0x8d6e63, label: 'Ahora no', fontSize: fs * 0.8, onPress: () => net.campaign('c:raise', { id: st.id, yes: false }) });
+        } else {
+          new Button(this, bx, y + rowH / 2 - bh / 2 - 2, {
+            w: bw,
+            h: bh,
+            color: w.vacation > 0 ? 0x8a8a8a : COLORS.blue,
+            label: 'Vacaciones',
+            fontSize: fs * 0.8,
+            onPress: () => w.vacation === 0 && net.campaign('c:vacation', st.id),
+          });
+          new Button(this, bx, y + rowH / 2 + bh / 2 + 2, { w: bw, h: bh, color: COLORS.red, label: 'Despedir', fontSize: fs * 0.8, onPress: () => net.campaign('c:fire', st.id) });
+        }
+      } else {
+        txt(this, a.x + 4, y + 6, `${st.name} · ${st.wage} al día`, fs);
+        txt(this, a.x + 4, y + 6 + fs * 1.25, st.description, fs * 0.75, { wordWrap: { width: textW } }).setAlpha(0.8);
+        new Button(this, bx, y + rowH / 2 - 2, { w: bw, h: 34 * s, color: COLORS.green, label: 'Contratar', fontSize: fs * 0.9, onPress: () => net.campaign('c:hire', st.id) });
+      }
       this.add.rectangle(a.x, y + rowH - 2, a.w, 1, 0x2b1d14, 0.12).setOrigin(0);
     });
   }
@@ -1074,6 +1245,8 @@ export class CampaignScene extends Phaser.Scene {
     if (r.contest) prog.push([r.contest.won ? `¡Concurso ganado! ${r.contest.served} de ${r.contest.goal}` : `Concurso: ${r.contest.served} de ${r.contest.goal}`, `+${r.contest.prize}`]);
     if (r.mission) prog.push([`${r.mission.ok ? 'Encargo cumplido' : 'Encargo fallido'}: ${r.mission.title} (${r.mission.progress})`, r.mission.ok ? `+${r.mission.reward}` : `${r.mission.rep} rep.`]);
     if (r.chapterDone) prog.push([`¡Capítulo ${r.chapterDone.n} completado! ${r.chapterDone.title}`, `+${r.chapterDone.reward}`]);
+    if (r.inspection) prog.push([`El inspector de sanidad os ha puesto un ${r.inspection}`, r.inspection === 'A' ? '+3 rep.' : r.inspection === 'C' ? '−3 rep.' : '']);
+    for (const n of r.staffNews ?? []) prog.push([n, '']);
     if (r.rivalRep != null) prog.push([`${RIVAL.name}: reputación ${r.rivalRep} (vosotros ${r.repAfter})`, '']);
     for (const x of r.xp ?? []) prog.push([`${x.name}: +${x.gained} de experiencia${x.newPoints ? ` · ¡${x.newPoints} punto${x.newPoints > 1 ? 's' : ''} nuevo${x.newPoints > 1 ? 's' : ''}!` : ''}`, '']);
     if (prog.length) {

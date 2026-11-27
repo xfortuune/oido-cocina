@@ -10,7 +10,10 @@ import {
   type Mission,
   isNightShift,
   weatherDay,
+  applyInspection,
+  newWeek,
 } from './campaign';
+import { makeNewspaper } from './newspaper';
 import { makeDilemma } from './barrio';
 import { makeReviews } from './reviews';
 import { insights } from './analysis';
@@ -328,6 +331,19 @@ export function afterClose(c: Campaign, r: DayReport, e: DayExtras): void {
       holiday: !!holidayOf(weatherDay({ day: r.day, city: c.city })),
       chefs: e.xp.map((x) => x.name),
     });
+  }
+  // El inspector (si venía hoy) pone nota; en un concurso, viene al día siguiente.
+  if (c.inspection.next === r.day) {
+    if (e.contest) c.inspection.next = r.day + 1;
+    else {
+      r.inspection = applyInspection(c, e.stats);
+      c.inspection.day = r.day;
+    }
+  }
+  // Los lunes sale el periódico con la semana.
+  if (c.day > 1 && (c.day - 1) % 7 === 0) {
+    c.newspaper = makeNewspaper(c);
+    c.week = newWeek();
   }
   // Mañana
   c.activeMission = null;

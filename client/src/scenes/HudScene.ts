@@ -589,6 +589,7 @@ export class HudScene extends Phaser.Scene {
       : [`Servid ${sim.goal} pedidos en ${formatDuration(sim.turnDuration)}`];
     if (fresh.length) lines.push(`¡Receta nueva: ${fresh.join(', ')}!`);
     if (sim.night) lines.push('Turno de noche: poca luz y noctámbulos con mucha propina');
+    if (campaign && net.info?.campana?.inspection?.next === sim.day) lines.push('¡Sorpresa! Hoy viene el inspector de sanidad: os pondrá nota');
     if (!campaign && !sim.contest && sim.level === 3) lines.push('¡Nuevo! Pedidos para llevar: se entregan en la ventanilla');
     if (!campaign && !sim.contest && sim.level === 4) lines.push('¡Nuevo! Manchas en el suelo: ponte delante y friega');
     if (!campaign && !sim.contest && !versus && sim.level === 6) lines.push('¡Nuevo! Las cajas se acaban: repón desde el almacén');

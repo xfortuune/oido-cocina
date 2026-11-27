@@ -15,6 +15,9 @@
 //
 // Solo en la campaña (fase 'gestion'):
 //   'c:buy'    StockId: comprar un paquete de ingredientes
+//   'c:vacation' StaffId: dos días de vacaciones a un empleado
+//   'c:raise'  { id, yes }: responder a una petición de aumento
+//   'c:supplier' SupplierId: firmar una semana con un proveedor
 //   'c:decide'  0 | 1: elegir en la decisión del barrio de esta mañana
 //   'c:franquicia' CityId: con la campaña completada, abrir una franquicia en otra ciudad
 //   'c:buyq'   StockId: comprar un paquete al proveedor de calidad (más caro; más propinas y reputación)

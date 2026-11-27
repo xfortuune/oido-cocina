@@ -136,23 +136,183 @@ export function getLocalUpgrade(id: string): LocalUpgrade | undefined {
   return LOCAL_BY_ID.get(id);
 }
 
-export function hasStaff(c: Campaign, id: StaffId): boolean {
+// ---------------------------------------------------------------- empleados con nombre y carácter
+
+export type TraitId = 'incansable' | 'simpatico' | 'ahorrador' | 'dormilon' | 'veterano';
+
+export const TRAITS: Record<TraitId, { name: string; description: string }> = {
+  incansable: { name: 'Incansable', description: 'Se cansa la mitad.' },
+  simpatico: { name: 'Simpático', description: '+1 de reputación cada día que trabaja.' },
+  ahorrador: { name: 'Ahorrador', description: 'Cobra 3 menos al día.' },
+  dormilon: { name: 'Dormilón', description: 'Algún día no aparece (pero cobra).' },
+  veterano: { name: 'Veterano', description: 'Nunca pide aumento.' },
+};
+
+/** Un empleado contratado: su nombre, su carácter y cómo está. */
+export interface Worker {
+  name: string;
+  trait: TraitId;
+  /** Cansancio (0-100): con 85 o más no trabaja; con 100, se va. */
+  fatigue: number;
+  /** Días trabajados y aumento de sueldo conseguido. */
+  days: number;
+  raise: number;
+  /** Días de vacaciones que le quedan (no trabaja y descansa). */
+  vacation: number;
+  /** Pide un aumento (cada 10 días trabajados). */
+  wantsRaise: boolean;
+}
+
+const WORKER_NAMES = ['Lola', 'Paco', 'Marisa', 'Toni', 'Rocío', 'Julián', 'Nuria', 'Quique', 'Elena', 'Andrés', 'Pili', 'Rafa', 'Sonia', 'Íker', 'Amparo', 'Dani'];
+
+function hash(n: number, salt: number): number {
+  let h = Math.imul(n + 977, 2654435761) ^ Math.imul(salt + 31, 2246822519);
+  h = Math.imul(h ^ (h >>> 15), 3266489917);
+  h ^= h >>> 13;
+  return ((h >>> 0) % 10000) / 10000;
+}
+
+/** Contratado (aunque hoy no trabaje). */
+export function isHired(c: Campaign, id: StaffId): boolean {
   return c.staff.includes(id);
 }
 
+/** Trabaja hoy: contratado, no está de vacaciones, ni agotado, ni (si es dormilón) dormido. */
+export function hasStaff(c: Campaign, id: StaffId): boolean {
+  if (!c.staff.includes(id)) return false;
+  const w = c.workers?.[id];
+  if (!w) return true;
+  if (w.vacation > 0 || w.fatigue >= 85) return false;
+  return !(w.trait === 'dormilon' && hash(c.day, id.length * 7) < 1 / 6);
+}
+
+export function wageOf(c: Campaign, id: StaffId): number {
+  const base = STAFF.find((s) => s.id === id)?.wage ?? 0;
+  const w = c.workers?.[id];
+  return base + (w?.raise ?? 0) - (w?.trait === 'ahorrador' ? 3 : 0);
+}
+
 export function wagesPerDay(c: Campaign): number {
-  return STAFF.filter((s) => c.staff.includes(s.id)).reduce((n, s) => n + s.wage, 0);
+  return c.staff.reduce((n, id) => n + wageOf(c, id), 0);
 }
 
 export function hire(c: Campaign, id: string): boolean {
   if (!STAFF.some((s) => s.id === id) || c.staff.includes(id as StaffId)) return false;
   c.staff.push(id as StaffId);
+  const traits = Object.keys(TRAITS) as TraitId[];
+  const used = new Set(Object.values(c.workers ?? {}).map((w) => w?.name));
+  const names = WORKER_NAMES.filter((n) => !used.has(n));
+  c.workers = {
+    ...c.workers,
+    [id]: {
+      name: names[Math.floor(hash(c.day, id.length + c.totals.days) * names.length)] ?? 'Sin nombre',
+      trait: traits[Math.floor(hash(c.day + 3, id.charCodeAt(0)) * traits.length)],
+      fatigue: 0,
+      days: 0,
+      raise: 0,
+      vacation: 0,
+      wantsRaise: false,
+    },
+  };
   return true;
 }
 
 export function fire(c: Campaign, id: string): boolean {
   if (!c.staff.includes(id as StaffId)) return false;
   c.staff = c.staff.filter((s) => s !== id);
+  if (c.workers) delete c.workers[id as StaffId];
+  return true;
+}
+
+/** Dos días de vacaciones: no trabaja (pero cobra) y vuelve descansado. */
+export function giveVacation(c: Campaign, id: string): boolean {
+  const w = c.workers?.[id as StaffId];
+  if (!w || w.vacation > 0) return false;
+  w.vacation = 2;
+  return true;
+}
+
+/** Responder a una petición de aumento: sí (+3 al día) o no (se cansa más). */
+export function answerRaise(c: Campaign, id: string, yes: boolean): boolean {
+  const w = c.workers?.[id as StaffId];
+  if (!w?.wantsRaise) return false;
+  w.wantsRaise = false;
+  if (yes) w.raise += 3;
+  else w.fatigue = Math.min(100, w.fatigue + 25);
+  return true;
+}
+
+/** Al cerrar: cansancio, vacaciones, aumentos y quién se va. Devuelve las noticias del personal. */
+function staffAfterDay(c: Campaign): string[] {
+  const news: string[] = [];
+  for (const id of [...c.staff]) {
+    const w = c.workers?.[id];
+    if (!w) continue;
+    const worked = hasStaff(c, id);
+    if (w.vacation > 0) {
+      w.vacation--;
+      w.fatigue = Math.max(0, w.fatigue - 50);
+      if (w.vacation === 0) news.push(`${w.name} vuelve mañana de vacaciones, como nuevo.`);
+      continue;
+    }
+    if (worked) {
+      w.days++;
+      w.fatigue = Math.min(100, w.fatigue + (w.trait === 'incansable' ? 4 : 8) + (w.wantsRaise ? 5 : 0));
+      if (w.trait === 'simpatico') c.reputation = Math.min(100, c.reputation + 1);
+      if (w.days % 10 === 0 && w.trait !== 'veterano') {
+        w.wantsRaise = true;
+        news.push(`${w.name} pide un aumento.`);
+      }
+    } else if (w.fatigue >= 85) {
+      // Agotado: hoy no ha trabajado y descansa un poco, pero si llega al límite se va.
+      w.fatigue = Math.min(100, w.fatigue + 8);
+    } else if (w.trait === 'dormilon') news.push(`${w.name} no vino: se quedó en la cama.`);
+    if (w.fatigue >= 100) {
+      fire(c, id);
+      news.push(`${w.name} (${STAFF.find((s) => s.id === id)?.name.toLowerCase()}) se ha ido: estaba agotado.`);
+    } else if (w.fatigue >= 85) news.push(`${w.name} está agotado: dadle vacaciones o se irá.`);
+  }
+  return news;
+}
+
+// ---------------------------------------------------------------- proveedores con contrato
+
+export type SupplierId = 'mercado' | 'lowcost' | 'puntual' | 'eco';
+
+export interface SupplierInfo {
+  name: string;
+  description: string;
+  /** Precio respecto al mercado, días de más que dura lo comprado, reputación al día y probabilidad de que no venga. */
+  price: number;
+  life: number;
+  rep: number;
+  fail: number;
+}
+
+export const SUPPLIERS: Record<SupplierId, SupplierInfo> = {
+  mercado: { name: 'Mercado del barrio', description: 'Precios normales, sin compromiso.', price: 1, life: 0, rep: 0, fail: 0 },
+  lowcost: { name: 'Distribuciones Low-Cost', description: 'Un 25 % más barato… pero uno de cada cuatro días el camión no llega.', price: 0.75, life: 0, rep: 0, fail: 0.25 },
+  puntual: { name: 'Hermanos Puntuales', description: 'Un 15 % más caro, siempre a su hora y todo dura un día más.', price: 1.15, life: 1, rep: 0, fail: 0 },
+  eco: { name: 'Huerta Ecológica', description: 'Un 30 % más caro; a los clientes les encanta: +2 de reputación al día.', price: 1.3, life: 0, rep: 2, fail: 0 },
+};
+
+/** Días que dura un contrato. */
+export const CONTRACT_DAYS = 7;
+
+export function supplierOf(c: Campaign): SupplierId {
+  return c.supplier && c.supplier.until >= c.day ? c.supplier.id : 'mercado';
+}
+
+/** Hoy el camión del proveedor barato no ha venido: no se puede comprar. */
+export function supplierFailsToday(c: Campaign): boolean {
+  const s = SUPPLIERS[supplierOf(c)];
+  return s.fail > 0 && hash(c.day, 99) < s.fail;
+}
+
+/** Firmar con un proveedor una semana (solo sin contrato en vigor). */
+export function signSupplier(c: Campaign, id: string): boolean {
+  if (!(id in SUPPLIERS) || id === 'mercado' || supplierOf(c) !== 'mercado') return false;
+  c.supplier = { id: id as SupplierId, until: c.day + CONTRACT_DAYS - 1 };
   return true;
 }
 
@@ -248,6 +408,10 @@ export interface DayReport {
   reviews?: Review[];
   /** Un consejo a partir de cómo fue el servicio (analysis.ts). */
   advice?: string;
+  /** Noticias del personal y del proveedor. */
+  staffNews?: string[];
+  /** Nota del inspector, si ha venido hoy. */
+  inspection?: Grade | null;
 }
 
 export interface Campaign {
@@ -289,6 +453,15 @@ export interface Campaign {
   dilemma: Dilemma | null;
   dilemmaResult: string | null;
   mods: DayMods;
+  /** Empleados: nombre, carácter, cansancio… (uno por puesto contratado). */
+  workers: Partial<Record<StaffId, Worker>>;
+  /** Proveedor con contrato (hasta qué día). */
+  supplier: { id: SupplierId; until: number } | null;
+  /** Lo de esta semana (para el periódico del lunes) y el último periódico. */
+  week: WeekStats;
+  newspaper: Newspaper | null;
+  /** Inspector de sanidad: cuándo viene y la última nota (se cuelga en la puerta). */
+  inspection: { next: number; grade: Grade | null; day: number };
   /** Franquicia: ciudad del restaurante y cuántos se han abierto (1 = el primero). */
   city: CityId;
   generation: number;
@@ -398,6 +571,11 @@ export function newCampaign(key: string, fame: Fame = { quiebras: 0, mejorDia: 0
     dilemma: null,
     dilemmaResult: null,
     mods: {},
+    workers: {},
+    supplier: null,
+    week: newWeek(),
+    newspaper: null,
+    inspection: { next: 5, grade: null, day: 0 },
     city: 'mandarina',
     generation: 1,
     sides: { ...SIDE_BASE },
@@ -427,7 +605,7 @@ export function priceFactor(day: number, id: StockId): number {
 export function packPriceToday(c: Campaign, id: StockId): number {
   const s = getStock(id)!;
   const boss = hasStaff(c, 'encargado') ? 0.8 : 1;
-  return Math.max(1, Math.round(s.packPrice * priceFactor(c.day, id) * boss));
+  return Math.max(1, Math.round(s.packPrice * priceFactor(c.day, id) * boss * SUPPLIERS[supplierOf(c)].price));
 }
 
 export function stockCount(c: Campaign, id: StockId): number {
@@ -453,11 +631,11 @@ export function buyStock(c: Campaign, id: StockId, premium = false): boolean {
   const s = getStock(id);
   if (!s) return false;
   const price = premium ? qualityPackPrice(c, id) : packPriceToday(c, id);
-  if (c.money < price) return false;
+  if (c.money < price || supplierFailsToday(c)) return false;
   c.money -= price;
   c.spentToday += price;
   // Con cámara frigorífica, todo dura un día más.
-  const life = s.life + (c.upgrades.includes('camara') ? 1 : 0);
+  const life = s.life + (c.upgrades.includes('camara') ? 1 : 0) + SUPPLIERS[supplierOf(c)].life;
   c.stock[id].push({ qty: s.pack, expires: c.day + life - 1, ...(premium ? { q: true } : {}) });
   return true;
 }
@@ -568,7 +746,7 @@ export function demandFactor(c: Campaign): number {
   // El tiempo, la estación y los festivos (weather.ts).
   const weather = conditions(c).demand;
   const city = CITIES[c.city]?.demand ?? 1;
-  const today = c.mods?.demand ?? 1;
+  const today = (c.mods?.demand ?? 1) * GRADE_DEMAND[c.inspection?.grade ?? 'B'];
   return Math.max(0.3, Math.min(3, appeal * variety * rep * decor * local * weather * city * today * rivalFactor(c) * weekdayFactor(c.day)));
 }
 
@@ -733,6 +911,12 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
   const { count: deliveries, income: deliveryIncome } = hasStaff(c, 'repartidor') ? deliver(c, Math.floor((c.reputation / 8) * conditions(c).delivery)) : { count: 0, income: 0 };
   c.money += deliveryIncome;
 
+  // Personal (cansancio, aumentos, vacaciones…) y proveedor ecológico.
+  const staffNews = staffAfterDay(c);
+  const sup = supplierOf(c);
+  c.reputation = Math.min(100, c.reputation + SUPPLIERS[sup].rep);
+  if (c.supplier && c.supplier.until === c.day) staffNews.push(`Termina el contrato con ${SUPPLIERS[c.supplier.id].name}.`);
+
   const rent = rentPerDay(c);
   const interest = Math.ceil(c.debt * CAMPAIGN.interest);
   const wages = wagesPerDay(c);
@@ -774,6 +958,7 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
     repAfter: c.reputation,
     repFromPrices,
     repFromQuality,
+    staffNews,
     weather: dayLabel(weatherDay(c)),
     moneyAfter: c.money,
     debtAfter: c.debt,
@@ -783,6 +968,13 @@ export function closeDay(c: Campaign, r: ServiceResult): DayReport {
   c.totals.served += r.served;
   c.totals.days++;
   c.fame.mejorDia = Math.max(c.fame.mejorDia, c.day);
+  // La semana, para el periódico del lunes.
+  const net = r.money + deliveryIncome - c.spentToday - rent - interest - wages;
+  c.week.days++;
+  c.week.served += r.served;
+  c.week.lost += r.lost;
+  c.week.money += net;
+  if (r.served > c.week.best.served) c.week.best = { day: c.day, served: r.served };
   c.spentToday = 0;
   c.mods = {};
   c.dilemma = null;
@@ -846,7 +1038,66 @@ export function reviveCampaign(raw: unknown, key: string): Campaign {
   out.dilemma ??= null;
   out.dilemmaResult ??= null;
   out.mods ??= {};
+  out.workers ??= {};
+  for (const id of out.staff) if (!out.workers[id]) {
+    // Personal de una versión anterior: se le pone nombre y carácter.
+    out.staff = out.staff.filter((x) => x !== id);
+    hire(out, id);
+  }
+  out.supplier ??= null;
+  out.week ??= newWeek();
+  out.newspaper ??= null;
+  out.inspection ??= { next: out.day + 3, grade: null, day: 0 };
   out.city = out.city in CITIES ? out.city : 'mandarina';
   out.generation ??= 1;
   return out;
+}
+
+// ---------------------------------------------------------------- periódico e inspector
+
+export interface WeekStats {
+  days: number;
+  served: number;
+  lost: number;
+  money: number;
+  best: { day: number; served: number };
+}
+
+export function newWeek(): WeekStats {
+  return { days: 0, served: 0, lost: 0, money: 0, best: { day: 0, served: 0 } };
+}
+
+export interface Newspaper {
+  /** Día (lunes) en que sale. */
+  day: number;
+  headline: string;
+  lines: string[];
+  gossip: string;
+  /** Previsión de la semana: el tiempo de los próximos 7 días. */
+  forecast: string[];
+}
+
+export type Grade = 'A' | 'B' | 'C';
+
+/** Cuánta gente viene según la nota de sanidad colgada en la puerta. */
+export const GRADE_DEMAND: Record<Grade, number> = { A: 1.12, B: 1, C: 0.85 };
+
+/** Nota del inspector según cómo ha ido el servicio. */
+export function gradeFor(stats: { served: number; lost: number; wrong: number; burnt: number }): Grade {
+  if (stats.served >= 4 && stats.lost <= 1 && stats.wrong <= 1 && stats.burnt <= 1) return 'A';
+  if (stats.served < 2 || stats.lost >= 4 || stats.wrong >= 4 || stats.burnt >= 4) return 'C';
+  return 'B';
+}
+
+/** ¿Viene hoy el inspector? (nunca en domingo de concurso: se pasa al día siguiente) */
+export function inspectorToday(c: Campaign): boolean {
+  return c.inspection?.next === c.day && !c.contestToday;
+}
+
+/** Tras el servicio en que ha venido el inspector: nota, efecto y la próxima visita (más o menos una por capítulo). */
+export function applyInspection(c: Campaign, stats: { served: number; lost: number; wrong: number; burnt: number }): Grade {
+  const grade = gradeFor(stats);
+  c.reputation = Math.max(0, Math.min(100, c.reputation + (grade === 'A' ? 3 : grade === 'C' ? -3 : 0)));
+  c.inspection = { next: c.day + 9 + Math.floor(hash(c.day, 5) * 4), grade, day: c.day };
+  return grade;
 }

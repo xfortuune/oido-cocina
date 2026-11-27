@@ -27,7 +27,8 @@ export type Sfx =
   | 'runOver'
   | 'perk'
   | 'emote'
-  | 'alarm';
+  | 'alarm'
+  | 'streak';
 
 export type MusicMode = 'menu' | 'kitchen' | null;
 
@@ -317,6 +318,12 @@ class GameAudio {
         // Cada gesto con su melodía corta: ¡Oído!, ¡Ayuda!, ¡Marchando!, ¡Gracias!
         const tunes = [[79, 84], [84, 79, 84], [72, 76, 79], [84, 88], [76, 79]];
         (tunes[n] ?? tunes[0]).forEach((m, i) => this.pluck(midi(m), t + i * 0.07, 0.12, 0.09, bus));
+        break;
+      }
+      case 'streak': {
+        // Cada multiplicador, un arpegio más agudo.
+        const base = n >= 3 ? 79 : n >= 2 ? 76 : 72;
+        [0, 4, 7, 12].forEach((d, i) => this.marimba(midi(base + d), t + i * 0.05, 0.14, bus));
         break;
       }
       case 'alarm':

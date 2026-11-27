@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { EMOTES, INCIDENTS, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
+import { EMOTES, INCIDENTS, orderLayers, streakMult, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { addSoundToggle } from '../ui/SoundToggle';
 import { Button } from '../ui/Button';
@@ -37,6 +37,9 @@ export class HudScene extends Phaser.Scene {
   private levelText?: Phaser.GameObjects.Text;
   /** Evento aleatorio en marcha: nombre y segundos que le quedan, arriba en el centro de la cocina. */
   private incidentText?: Phaser.GameObjects.Text;
+  /** Racha: pedidos seguidos y su multiplicador, abajo a la izquierda de la cocina. */
+  private streakText?: Phaser.GameObjects.Text;
+  private shownStreak = 0;
   /** Tutorial: pasos que tocan, por cuál va, y su panel y flecha. */
   private tutorial: { steps: TutorialStep[]; i: number } | null = null;
   private tutorialChecked = false;
@@ -152,6 +155,15 @@ export class HudScene extends Phaser.Scene {
     this.syncNameTags();
     this.syncEmotes();
     this.updateTutorial();
+    // Racha (desde 2 pedidos seguidos): crece al subir.
+    if (this.streakText && sim.streak !== this.shownStreak) {
+      const grew = sim.streak > this.shownStreak && this.shownStreak >= 0;
+      this.shownStreak = sim.streak;
+      const m = streakMult(sim.streak);
+      this.streakText.setText(`Racha ${sim.streak}${m > 1 ? ` · ×${m}` : ''}`).setVisible(sim.streak >= 2);
+      this.streakText.setBackgroundColor(m >= 3 ? '#8e44addd' : m >= 2 ? '#e67e22dd' : m > 1 ? '#c0392bdd' : '#2b1d14cc');
+      if (grew) this.tweens.add({ targets: this.streakText, scale: { from: 1.35, to: 1 }, duration: 220, ease: 'Back.Out' });
+    }
     const inc = sim.incident;
     if (this.incidentText) {
       if (inc && !net.paused) {
@@ -252,6 +264,15 @@ export class HudScene extends Phaser.Scene {
       chat.on('pointerdown', () => this.toggleEmoteMenu());
     }
     else addSoundToggle(this, L.kitchen.x + L.kitchen.w - 18, L.kitchen.y + L.kitchen.h - 14, 2, 30);
+    this.shownStreak = -1;
+    this.streakText = txt(this, L.kitchen.x + 6, L.kitchen.y + L.kitchen.h - 6, '', 15, {
+      color: '#fff4dc',
+      backgroundColor: '#c0392bdd',
+      padding: { x: 5, y: 2 },
+    })
+      .setOrigin(0, 1)
+      .setDepth(7)
+      .setVisible(false);
     this.incidentText = txt(this, L.kitchen.x + L.kitchen.w / 2, L.kitchen.y + L.kitchen.h - 6, '', 14, {
       color: '#2b1d14',
       backgroundColor: '#ffc93c',
@@ -736,16 +757,32 @@ export class HudScene extends Phaser.Scene {
 
   private createTicket(order: Order, w: number, h: number): TicketView {
     const recipe = getRecipe(order.recipeId);
+    const layers = orderLayers(order);
     const container = this.add.container(0, 0);
     const g = this.add.graphics();
     pixelPanel(g, 0, 0, w, h, COLORS.panel, 2);
     // Crítico (dorado) y cumpleaños (rosa) se distinguen en la comanda.
-    g.fillStyle(order.special === 'critico' ? 0xd4a017 : order.special === 'cumple' ? 0xf28ac0 : COLORS.orange).fillRect(4, 2, w - 8, 15);
+    const head =
+      order.special === 'critico' ? 0xd4a017 : order.special === 'cumple' ? 0xf28ac0 : order.mood === 'prisa' ? COLORS.red : order.note ? 0x8e44ad : COLORS.orange;
+    g.fillStyle(head).fillRect(4, 2, w - 8, 15);
     container.add(g);
     // Mismo número que el bocadillo del cliente en la calle.
     g.fillStyle(0xffffff).fillRect(4, 2, 12, 15);
     container.add(this.add.image(7, 4, `digit_${order.slot + 1}`).setOrigin(0).setScale(2));
-    const label = order.special === 'critico' ? `Crítico ×3 · ${recipe.name}` : order.special === 'cumple' ? `Cumple ×3 · ${recipe.name}` : recipe.name;
+    // Cómo la quiere: «La Chispa · sin queso»; y quién es: con prisa, niño, habitual.
+    const base = order.note ? `${recipe.name} · ${order.note}` : recipe.name;
+    const label =
+      order.special === 'critico'
+        ? `Crítico ×3 · ${base}`
+        : order.special === 'cumple'
+          ? `Cumple ×3 · ${base}`
+          : order.mood === 'prisa'
+            ? `¡Prisa! · ${base}`
+            : order.mood === 'habitual'
+              ? `Habitual · ${base}`
+              : order.mood === 'nino'
+                ? `Niño · ${base}`
+                : base;
     const name = txt(this, w / 2 + 8, 9, label, 12, { color: '#ffffff' }).setOrigin(0.5);
     if (name.width > w - 26) name.setScale((w - 26) / name.width);
     container.add(name);
@@ -753,7 +790,7 @@ export class HudScene extends Phaser.Scene {
     // Hamburguesa y acompañamientos en pixel art a escala entera (se ven las capas en orden).
     const areaTop = 20;
     const areaH = h - areaTop - 13;
-    const burgerH = stackPixelHeight(recipe.layers);
+    const burgerH = stackPixelHeight(layers);
     const sides = (order.fries ? 1 : 0) + (order.drink ? 1 : 0);
     const columns = 1 + (sides > 0 ? 1 : 0);
     const scale = Math.max(1, Math.floor(Math.min(areaH / burgerH, (w - 10) / (12 * columns + 2))));
@@ -766,7 +803,7 @@ export class HudScene extends Phaser.Scene {
     };
 
     const burger = this.add.container(2 + colW / 2, areaTop + (areaH + burgerH * scale) / 2).setScale(scale);
-    fillStack(burger, recipe.layers);
+    fillStack(burger, layers);
     container.add(burger);
     parts.burger = { art: burger, check: check(burger.x, areaTop + areaH / 2) };
 
@@ -795,6 +832,18 @@ export class HudScene extends Phaser.Scene {
         const at = this.kitchen.worldToScreen(this.kitchen.sim.slots[ev.slot] ?? 0, 2);
         this.popup(at.x, at.y, `+${ev.earned}`, '#7dff8a');
         if (ev.perfect) this.popup(at.x, at.y + 22, `¡Perfecto! +${ev.tip}`, '#ffc93c', 150);
+        if (ev.bonus) this.popup(at.x, at.y + 44, `Racha ×${streakMult(ev.streak)} +${ev.bonus}`, '#ff9f43', 300);
+        break;
+      }
+      case 'streak': {
+        const L = this.L;
+        if (ev.broken) {
+          this.popup(L.kitchen.x + L.kitchen.w / 2, L.kitchen.y + L.kitchen.h * 0.55, `¡Racha rota! (${ev.n} seguidos)`, '#ff6b5b');
+          audio.sfx('denied');
+        } else {
+          this.popup(L.kitchen.x + L.kitchen.w / 2, L.kitchen.y + L.kitchen.h * 0.55, `¡Racha de ${ev.n}! Extra ×${ev.mult}`, '#ff9f43');
+          audio.sfx('streak', ev.mult);
+        }
         break;
       }
       case 'wrong': {

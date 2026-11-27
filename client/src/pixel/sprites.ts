@@ -431,6 +431,35 @@ function generateIcons(scene: Phaser.Scene): void {
   // Gotita de sudor (clientes impacientes) y destello (servir).
   paint(scene, 'icon_pause', ['kkkkkkkkk', 'kbbbbbbbk', 'kbkkbkkbk', 'kbkkbkkbk', 'kbkkbkkbk', 'kbkkbkkbk', 'kbbbbbbbk', 'kkkkkkkkk'], pal, 9);
   paint(scene, 'icon_chat', ['.kkkkkkk.', 'kbbbbbbbk', 'kbkbkbkbk', 'kbbbbbbbk', '.kkbkkkk.', '..kk.....'], pal, 9);
+  // Decoración del restaurante (se ve en la calle y en la cocina cuando se compra).
+  const deco = { ...BASE, r: '#e5483a', R: '#ff8a73', y: '#ffd23f', Y: '#e0a800', g: '#5cc46a', G: '#37913f', b: '#8d5a3b', B: '#6b4029', c: '#4fa3e0', p: '#c77de0', n: '#ff4fa3', w: '#f7f4ee', s: '#bdbdbd' };
+  paint(scene, 'deco_sombrilla', [
+    '.....kkkkkk.....', '...kkrwrwrwkk...', '..krwrwrwrwrwk..', '.kkkkkkkkkkkkkk.', '.......kk.......', '.......kk.......',
+    '.......kk.......', '..kkkkkkkkkkkk..', '..kbbbbbbbbbbk..', '..kkkkkkkkkkkk..', '...kk......kk...', '...kk......kk...',
+  ], deco);
+  paint(scene, 'deco_mesa', [
+    '..kkkkkkkkkk..', '.kbbbbbbbbbbk.', '.kkkkkkkkkkkk.', 'k..kk....kk..k', 'kk.kk....kk.kk', 'kk..........kk', 'kk..........kk',
+  ], deco);
+  paint(scene, 'deco_planta', ['..g.g.g...', '.gGgGgGg..', 'gGgGgGgGg.', '.gGgGgGg..', '..kkkkk...', '..kbbbk...', '..kbbbk...', '...kkk....'], deco);
+  paint(scene, 'deco_neon', [
+    'kkkkkkkkkkkkkkkkkkkkkkkkkkk',
+    'k.........................k',
+    'k.nn..n.n.nn..nnn.nnn.nn..k',
+    'k.n.n.n.n.n.n.n...n...n.n.k',
+    'k.nn..n.n.nn..n.n.nn..nn..k',
+    'k.n.n.n.n.n.n.n.n.n...n.n.k',
+    'k.nn..nnn.n.n.nnn.nnn.n.n.k',
+    'k.........................k',
+    'kkkkkkkkkkkkkkkkkkkkkkkkkkk',
+  ], deco);
+  paint(scene, 'deco_cuadro', ['kkkkkkkkk', 'kyyyyyyyk', 'kycccccyk', 'kycgggcyk', 'kyggGggyk', 'kyyyyyyyk', 'kkkkkkkkk'], deco);
+  paint(scene, 'deco_jukebox', [
+    '...kkkkkk...', '..kppppppk..', '.kpyyyyyypk.', '.kpykkkkypk.', '.kpykrrkypk.', '.kpykkkkypk.', '.kpyyyyyypk.',
+    '.kppnnnnppk.', '.kppnnnnppk.', '.kpppppppk..', '.kkkkkkkkk..',
+  ], deco);
+  paint(scene, 'deco_tarro', ['.kkkk.', 'kwwwwk', 'kwyywk', 'kyyyyk', 'kyYyyk', 'kkkkkk'], deco);
+  paint(scene, 'deco_nota', ['..kk', '..kk', '..k.', 'kkk.', 'kkk.'], { k: '#ffd23f' });
+  paint(scene, 'icon_heart', ['.kk.kk.', 'krrkrrk', 'krrrrrk', '.krrrk.', '..krk..', '...k...'], pal);
   paint(scene, 'icon_sweat', ['.c.', 'ccc', 'cbc', '.c.'], pal);
   paint(scene, 'icon_spark', ['..y..', '..y..', 'yybyy', '..y..', '..y..'], pal);
   paint(scene, 'icon_confetti', ['yy', 'yy'], { y: '#ffffff' });

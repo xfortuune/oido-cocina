@@ -5,7 +5,7 @@ import {
   EMOTES,
   serviceUpgrades,
   kitchenFor,
-  getRecipe,
+  orderLayers,
   KitchenSim,
   ROLE_NAMES,
   roleFor,
@@ -113,6 +113,7 @@ export class KitchenScene extends Phaser.Scene {
 
     this.buildWorld();
     this.addHelpers();
+    this.addDecor();
     this.overlay = this.add.graphics().setDepth(500);
     this.syncPlayers(0, 0);
     this.layoutCamera();
@@ -277,6 +278,51 @@ export class KitchenScene extends Phaser.Scene {
       const sprite = this.add.image(px, py, chefKey({ apron: spot.apron, hat: spot.hat }, dir, 0)).setOrigin(0.5, 1).setDepth(9 + py).setAlpha(0.95);
       if (d[0] > 0) sprite.setFlipX(true);
       this.tweens.add({ targets: sprite, y: py - 1, duration: 300 + Math.random() * 200, yoyo: true, repeat: -1 });
+    }
+  }
+
+  /** Decoración comprada (campaña) y la terraza o el tarro de propinas (Desafío): se ven en el restaurante. */
+  private addDecor(): void {
+    const info = net.info;
+    const owned = info?.juego === 'campana' ? (info.campana?.upgrades ?? []) : (info?.mejoras ?? []);
+    const has = (id: string) => owned.includes(id);
+    const k = this.sim.kitchen;
+    const slots = this.sim.slots;
+    const W = k.width * TILE;
+    const at = (key: string, x: number, y: number, depth?: number) =>
+      this.add.image(x, y, key).setOrigin(0.5, 1).setDepth(depth ?? 10 + y);
+    // En la acera (fila 1), entre los huecos de los clientes.
+    const gaps = slots.slice(0, -1).map((x, i) => ((x + slots[i + 1]) / 2) * TILE);
+    if (has('terraza')) [gaps[0], gaps[gaps.length - 1]].forEach((x) => at('deco_sombrilla', x, 1.9 * TILE));
+    if (has('mesas')) gaps.slice(1, -1).forEach((x) => at('deco_mesa', x, 1.9 * TILE));
+    if (has('plantas')) {
+      at('deco_planta', 0.5 * TILE, 3.05 * TILE);
+      at('deco_planta', W - 0.5 * TILE, 3.05 * TILE);
+    }
+    if (has('musica')) {
+      const jb = at('deco_jukebox', 0.55 * TILE, 1.6 * TILE);
+      this.time.addEvent({
+        delay: 900,
+        loop: true,
+        callback: () => {
+          const n = this.add.image(jb.x + 4, jb.y - 12, 'deco_nota').setDepth(460);
+          this.tweens.add({ targets: n, y: n.y - 12, x: n.x + (Math.random() - 0.5) * 8, alpha: 0, duration: 1200, onComplete: () => n.destroy() });
+        },
+      });
+    }
+    if (has('neon')) {
+      // En la fachada, encima del pase; parpadea de vez en cuando.
+      const sign = at('deco_neon', W - 4.3 * TILE, 3 * TILE + 9, 30);
+      this.tweens.add({ targets: sign, alpha: { from: 1, to: 0.55 }, duration: 90, yoyo: true, repeat: -1, repeatDelay: 2200 });
+    }
+    if (has('cuadros')) {
+      // En las paredes de la cocina (las de la izquierda, por debajo del pase).
+      const walls = k.tiles.flat().filter((t) => t.kind === 'wall' && t.x === 0 && t.y > 4).slice(0, 2);
+      for (const t of walls) at('deco_cuadro', t.x * TILE + 8, t.y * TILE + 12, 3);
+    }
+    if (has('tarro')) {
+      const pase = k.tiles.flat().find((t) => t.kind === 'pase');
+      if (pase) at('deco_tarro', pase.x * TILE + 3, pase.y * TILE + 6, 12 + pase.y * TILE);
     }
   }
 
@@ -584,7 +630,7 @@ export class KitchenScene extends Phaser.Scene {
    * tomado nota (antes, unos puntos suspensivos: hay que ir a atenderle).
    */
   private buildBubble(order: Order, x: number, y: number): Pick<CustomerView, 'bubble' | 'bar' | 'parts'> {
-    const layers = getRecipe(order.recipeId).layers;
+    const layers = orderLayers(order);
     const sides = order.taken ? (order.fries ? 1 : 0) + (order.drink ? 1 : 0) : 0;
     const innerW = order.taken ? 14 + sides * 13 : 16;
     const bubbleH = order.taken ? Math.max(stackPixelHeight(layers), 11) + 12 : 16;
@@ -601,6 +647,9 @@ export class KitchenScene extends Phaser.Scene {
       const icon = this.add.image(half - 1, -bubbleH - 1, order.special === 'critico' ? 'icon_star' : 'icon_confetti').setOrigin(0.5);
       if (order.special === 'cumple') icon.setScale(2).setTint(0xf28ac0);
       bubble.add(icon);
+    } else if (order.mood === 'prisa' || order.mood === 'habitual') {
+      // Con prisa: reloj; habitual: corazón.
+      bubble.add(this.add.image(half - 1, -bubbleH - 1, order.mood === 'prisa' ? 'icon_clock' : 'icon_heart').setOrigin(0.5));
     }
     const parts: CustomerView['parts'] = {};
 

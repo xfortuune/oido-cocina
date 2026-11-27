@@ -17,7 +17,7 @@ import { levelParams, RECIPE_LEVEL, type LevelParams } from './levels';
 import { INCIDENT_KINDS, INCIDENT_WARNING, INCIDENTS, type ActiveIncident, type IncidentKind } from './incidents';
 import { perkCount } from './perks';
 import { DEFAULT_LOOK, type ChefLook } from './looks';
-import { getRecipe, type Ingredient } from './recipes';
+import { getRecipe, INGREDIENT_NAMES, type Ingredient } from './recipes';
 
 export const CONFIG = {
   maxStack: 12,
@@ -145,6 +145,24 @@ export interface Order {
   look: number;
   /** Cliente especial de un evento: crítico o cumpleaños (paga el triple). */
   special?: 'critico' | 'cumple';
+  /** Personalidad: con prisa, niño, exigente (lo quiere a su manera) o habitual. */
+  mood?: Mood;
+  /** Hamburguesa a su manera (sin o con doble de algo); si no, la de la receta. */
+  layers?: Ingredient[];
+  /** Cómo la quiere, para la comanda: «sin queso», «doble de queso»… */
+  note?: string;
+}
+
+export type Mood = 'prisa' | 'nino' | 'exigente' | 'habitual';
+
+/** Capas que hay que entregar para un pedido (la receta, o como la quiere el cliente). */
+export function orderLayers(o: Order): readonly Ingredient[] {
+  return o.layers ?? getRecipe(o.recipeId).layers;
+}
+
+/** Multiplicador de la racha de pedidos servidos seguidos. */
+export function streakMult(n: number): number {
+  return n >= 10 ? 3 : n >= 6 ? 2 : n >= 3 ? 1.5 : 1;
 }
 
 export interface TurnStats {
@@ -160,6 +178,8 @@ export interface TurnStats {
   byRecipe?: Record<string, number>;
   /** Pedidos servidos con hamburguesa, patatas y bebida. */
   combos?: number;
+  /** La mejor racha de la ronda. */
+  bestStreak?: number;
 }
 
 export type SimEvent =
@@ -167,7 +187,9 @@ export type SimEvent =
   | { type: 'taken'; orderId: number; slot: number }
   | { type: 'denied'; playerId: string; role: Role }
   | { type: 'given'; from: string; to: string }
-  | { type: 'served'; orderId: number; slot: number; earned: number; tip: number; perfect: boolean }
+  | { type: 'served'; orderId: number; slot: number; earned: number; tip: number; perfect: boolean; streak: number; bonus: number }
+  /** La racha sube de multiplicador o se rompe (con lo que llevaba). */
+  | { type: 'streak'; n: number; mult: number; broken: boolean }
   | { type: 'part'; orderId: number; slot: number; part: OrderPart }
   | { type: 'wrong'; penalty: number; x: number; y: number }
   | { type: 'lost'; orderId: number; slot: number; penalty: number }
@@ -200,6 +222,8 @@ export interface SimSnapshot {
   incident: ActiveIncident | null;
   /** Si la caja tiene que tomar nota (no en solitario, modo libre ni con camarero). */
   needsCaja: boolean;
+  /** Pedidos servidos seguidos (racha). */
+  streak: number;
   stock: Record<string, number> | null;
   money: number;
   reputation: number;
@@ -242,6 +266,9 @@ export class KitchenSim {
   day = 0;
   stock: Record<string, number> | null = null;
   prices: { recipes: Record<string, number>; fries: number; drink: number } | null = null;
+
+  /** Pedidos servidos seguidos sin fallar (se rompe al equivocarse, perder un cliente o quemar algo). */
+  streak = 0;
 
   /** Fallos perdonados por el Seguro de cocina y cada cuánto trabajan los empleados. */
   private insured = 0;
@@ -547,6 +574,7 @@ export class KitchenSim {
         this.money -= CONFIG.lostMoneyPenalty;
         this.reputation -= penalty;
         this.stats.lost++;
+        this.breakStreak();
         this.events.push({ type: 'lost', orderId: order.id, slot: order.slot, penalty });
       }
     }
@@ -577,6 +605,7 @@ export class KitchenSim {
       map: this.map,
       incident: this.incident,
       needsCaja: this.needsCaja,
+      streak: this.streak,
       stock: this.stock,
       money: this.money,
       reputation: this.reputation,
@@ -603,6 +632,7 @@ export class KitchenSim {
     this.contest = s.contest;
     this.incident = s.incident;
     this.needsCaja = s.needsCaja;
+    this.streak = s.streak;
     this.stock = s.stock;
     this.money = s.money;
     this.reputation = s.reputation;
@@ -711,6 +741,7 @@ export class KitchenSim {
           const cost = (this.upgrades.includes('extintor') ? 0 : CONFIG.burnCost) * this.inspectionFactor();
           this.money -= cost;
           this.stats.burnt++;
+          this.breakStreak();
           this.events.push({ type: 'burnt', x, y, what, cost });
           // El limpiador lo retira al momento.
           if (this.upgrades.includes('emp_limpiador')) st.item = null;
@@ -729,7 +760,7 @@ export class KitchenSim {
     let order: Order | undefined;
     if (item.kind === 'food') {
       part = 'burger';
-      order = byUrgency.find((o) => !o.done.burger && sameLayers(getRecipe(o.recipeId).layers, item.layers));
+      order = byUrgency.find((o) => !o.done.burger && sameLayers(orderLayers(o), item.layers));
     } else if (item.kind === 'fries') {
       part = 'fries';
       order = byUrgency.find((o) => o.fries && !o.done.fries);
@@ -763,6 +794,7 @@ export class KitchenSim {
       this.reputation -= CONFIG.wrongRepPenalty * f;
       this.stats.wrong++;
       this.playerStats[by].mistakes++;
+      this.breakStreak();
       this.events.push({ type: 'wrong', penalty: CONFIG.wrongMoneyPenalty * f, x: at.x, y: at.y });
       if (this.reputation <= 0) this.finish('reputation');
       return true;
@@ -807,20 +839,31 @@ export class KitchenSim {
     const earned = Math.round(price * (0.6 + 0.4 * ratio)) * mult;
     if (order.special === 'critico' && perfect) this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 6);
     const tip = perfect
-      ? Math.ceil(price * 0.3) * (this.upgrades.includes('tarro') ? 2 : 1) * (this.upgrades.includes('c_propinas') ? 2 : 1)
+      ? Math.ceil(price * 0.3) *
+        (this.upgrades.includes('tarro') ? 2 : 1) *
+        (this.upgrades.includes('c_propinas') ? 2 : 1) *
+        (order.mood === 'prisa' ? 2 : 1)
       : 0;
+    // Los habituales hablan bien de vosotros.
+    if (order.mood === 'habitual') this.reputation = Math.min(CONFIG.maxReputation, this.reputation + 2);
+    // Racha: cada pedido seguido sube el multiplicador, que da un extra.
+    this.streak++;
+    this.stats.bestStreak = Math.max(this.stats.bestStreak ?? 0, this.streak);
+    const sm = streakMult(this.streak);
+    if (sm > streakMult(this.streak - 1)) this.events.push({ type: 'streak', n: this.streak, mult: sm, broken: false });
+    const bonus = Math.round((earned + tip) * (sm - 1) * 0.5);
 
     this.orders = this.orders.filter((o) => o !== order);
-    this.money += earned + tip;
+    this.money += earned + tip + bonus;
     this.reputation = Math.min(CONFIG.maxReputation, this.reputation + (perfect ? 2 : 1));
     this.stats.served++;
     const by = (this.stats.byRecipe ??= {});
     by[order.recipeId] = (by[order.recipeId] ?? 0) + 1;
     if (order.fries && order.drink) this.stats.combos = (this.stats.combos ?? 0) + 1;
-    this.stats.earned += earned + tip;
-    this.stats.tips += tip;
+    this.stats.earned += earned + tip + bonus;
+    this.stats.tips += tip + bonus;
     if (perfect) this.stats.perfect++;
-    this.events.push({ type: 'served', orderId: order.id, slot: order.slot, earned, tip, perfect });
+    this.events.push({ type: 'served', orderId: order.id, slot: order.slot, earned, tip, perfect, streak: this.streak, bonus });
   }
 
   private spawnOrder(): void {
@@ -850,7 +893,7 @@ export class KitchenSim {
       (this.upgrades.includes('terraza') ? 1.15 : 1) *
       (this.upgrades.includes('c_hilo') ? 1.25 : 1) *
       lerp(1, 0.85, this.progress);
-    const order: Order = {
+    const order: Order = this.withMood({
       id: this.nextId++,
       recipeId,
       fries,
@@ -862,9 +905,43 @@ export class KitchenSim {
       maxPatience,
       slot,
       look: Math.floor(this.random() * 1000),
-    };
+    });
     this.orders.push(order);
     this.events.push({ type: 'newOrder', orderId: order.id });
+  }
+
+  /**
+   * Desde el nivel 2, algunos clientes tienen personalidad: con prisa (poca paciencia, propina doble), niños
+   * (La Chispa sin queso y con patatas), exigentes (sin algo o con doble de algo) y habituales (más reputación).
+   */
+  private withMood(o: Order): Order {
+    // Los 3 primeros clientes de la ronda son normales, para calentar.
+    if (this.level < 2 || o.id <= 3 || this.random() > 0.3) return o;
+    const r = this.random();
+    if (r < 0.3) {
+      const t = o.patience * 0.65;
+      return { ...o, mood: 'prisa', patience: t, maxPatience: t };
+    }
+    if (r < 0.5) {
+      const t = o.patience * 1.2;
+      return { ...o, mood: 'nino', recipeId: 'chispa', layers: ['pan', 'carne', 'pan'], note: 'sin queso', fries: true, patience: t, maxPatience: t };
+    }
+    if (r < 0.8) {
+      const base = getRecipe(o.recipeId).layers;
+      const optional = base.filter((l, i) => l !== 'pan' && l !== 'carne' && base.indexOf(l) === i);
+      if (!optional.length) return { ...o, mood: 'habitual' };
+      const ing = optional[Math.floor(this.random() * optional.length)];
+      const name = INGREDIENT_NAMES[ing].toLowerCase();
+      if (this.random() < 0.5) return { ...o, mood: 'exigente', layers: base.filter((l) => l !== ing), note: `sin ${name}` };
+      const at = base.indexOf(ing);
+      return { ...o, mood: 'exigente', layers: [...base.slice(0, at + 1), ing, ...base.slice(at + 1)], note: `doble de ${name}` };
+    }
+    return { ...o, mood: 'habitual' };
+  }
+
+  private breakStreak(): void {
+    if (this.streak >= 3) this.events.push({ type: 'streak', n: this.streak, mult: 1, broken: true });
+    this.streak = 0;
   }
 
   // ---------------------------------------------------------------- empleados del Desafío

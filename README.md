@@ -385,6 +385,26 @@ En los concursos no hay eventos.
 
 Están en `shared/src/incidents.ts` y la lógica en `sim.ts`.
 
+### Rachas y combos
+
+Cada pedido perfecto seguido sube la racha (abajo a la izquierda): con 3 el dinero va ×1,5, con 6 ×2 y con 10 ×3
+(se suma la mitad del extra como bonus). Un cliente que se va, algo quemado o una entrega equivocada la rompen.
+
+### Clientes con personalidad
+
+Desde el nivel 2 (y nunca en los 3 primeros de la ronda), algunos clientes tienen carácter y se ve en su ticket:
+
+- **Con prisa** (reloj): esperan menos, pero dejan el doble de propina.
+- **Niños**: La Chispa *sin queso* y con patatas; tienen algo más de paciencia.
+- **Exigentes**: «sin lechuga», «doble de queso»… hay que montarla tal cual.
+- **Habituales** (corazón): dan reputación extra si quedan contentos.
+
+### El local se ve
+
+Lo que se compra en la campaña aparece en la escena: terraza con sombrillas, mesas, plantas, la gramola con notas
+flotando, el letrero de neón BURGER que parpadea, cuadros y el tarro de propinas; y los empleados aparecen junto a su
+puesto.
+
 ### Tutorial
 
 La primera vez que se juega (en la campaña o en el Desafío, nunca en un concurso) sale una guía paso a paso con una

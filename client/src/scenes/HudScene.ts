@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WEATHER, weatherOf, weatherDay, holidayOf, EMOTES, INCIDENTS, orderLayers, streakMult, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
+import { TEAMS, WEATHER, weatherOf, weatherDay, holidayOf, EMOTES, INCIDENTS, orderLayers, streakMult, formatDuration, getPerk, getRecipe, getStock, newRecipesAt, weekday, CRATE_STOCK, ROLE_NAMES, type EmoteMessage, type Order, type OrderPart, type SimEvent } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { addSoundToggle } from '../ui/SoundToggle';
 import { Button } from '../ui/Button';
@@ -117,7 +117,18 @@ export class HudScene extends Phaser.Scene {
     }
     this.hud.money.setText(String(sim.money)).setColor(sim.money < 0 ? '#ff6b5b' : '#fff4dc');
     this.hud.rep.setText(String(Math.max(0, sim.reputation))).setColor(sim.reputation <= 15 ? '#ff6b5b' : '#fff4dc');
-    if (sim.contest) {
+    if (net.info?.juego === 'versus') {
+      // Versus: el marcador de los dos equipos (el tuyo primero).
+      this.hud.served.setText(String(sim.stats.served)).setColor('#fff4dc');
+      const vs = net.vs;
+      const mine = net.me?.team === 1 ? 1 : 0;
+      if (vs) {
+        const lead = vs[mine].money - vs[1 - mine].money;
+        this.levelText
+          ?.setText(`${TEAMS[mine].name} ${vs[mine].money} · ${TEAMS[1 - mine].name} ${vs[1 - mine].money}${lead > 0 ? ' · ¡ganáis!' : lead < 0 ? ' · ¡os ganan!' : ''}`)
+          .setColor(lead >= 0 ? '#7ee081' : '#ff8a73');
+      }
+    } else if (sim.contest) {
       // Campaña, domingo de concurso: objetivo de pedidos, como el Desafío.
       const reached = sim.stats.served >= sim.goal;
       this.hud.served.setText(`${sim.stats.served}/${sim.goal}`).setColor(reached ? '#7ee081' : '#fff4dc');
@@ -185,7 +196,10 @@ export class HudScene extends Phaser.Scene {
       this.rolesKey = rolesKey;
       const names = me?.roles.map((r) => ROLE_NAMES[r]).join(' · ');
       const all = me?.roles.length === 4;
-      const label = all
+      const team = net.info?.juego === 'versus' ? TEAMS[net.me?.team === 1 ? 1 : 0].name : null;
+      const label = team
+        ? `Equipo ${team}`
+        : all
         ? net.info?.estilo === 'libre' && (net.info?.modo ?? 1) > 1
           ? 'Modo libre: toda la cocina para todos'
           : 'Toda la cocina es tuya'
@@ -564,8 +578,11 @@ export class HudScene extends Phaser.Scene {
     const sim = this.kitchen.sim;
     const L = this.L;
     const campaign = sim.day > 0 && !sim.contest;
-    const fresh = campaign ? [] : newRecipesAt(sim.level).map((id) => getRecipe(id).name);
-    const lines = campaign
+    const versus = net.info?.juego === 'versus';
+    const fresh = campaign || versus ? [] : newRecipesAt(sim.level).map((id) => getRecipe(id).name);
+    const lines = versus
+      ? [`Equipo ${TEAMS[net.me?.team === 1 ? 1 : 0].name}: servid antes que el rival`, 'Gana quien más dinero haga']
+      : campaign
       ? [`${weekday(sim.day)} · unos ${sim.goal} clientes en ${formatDuration(sim.turnDuration)}`]
       : [`Servid ${sim.goal} pedidos en ${formatDuration(sim.turnDuration)}`];
     if (fresh.length) lines.push(`¡Receta nueva: ${fresh.join(', ')}!`);
@@ -574,7 +591,7 @@ export class HudScene extends Phaser.Scene {
     if (!campaign && !sim.contest && sim.level === 4) lines.push('¡Nuevo! Manchas en el suelo: ponte delante y friega');
     const cx = L.kitchen.x + L.kitchen.w / 2;
     const cy = L.kitchen.y + L.kitchen.h * 0.4;
-    const title = txt(this, cx, cy, sim.contest ? 'CONCURSO' : campaign ? `DÍA ${sim.day}` : `NIVEL ${sim.level}`, clamp(L.kitchen.w * 0.09, 30, 56), {
+    const title = txt(this, cx, cy, sim.contest ? 'CONCURSO' : versus ? 'VERSUS' : campaign ? `DÍA ${sim.day}` : `NIVEL ${sim.level}`, clamp(L.kitchen.w * 0.09, 30, 56), {
       color: '#ff8a3d',
       stroke: '#2b1d14',
       strokeThickness: 8,
@@ -836,6 +853,12 @@ export class HudScene extends Phaser.Scene {
 
   private onSimEvent(ev: SimEvent): void {
     switch (ev.type) {
+      case 'stolen': {
+        const at = this.kitchen.worldToScreen(...this.kitchen.slotPos(ev.slot));
+        this.popup(at.x, at.y, '¡Se lo lleva el otro equipo!', '#ff8a73');
+        audio.sfx('lost');
+        break;
+      }
       case 'served': {
         const at = this.kitchen.worldToScreen(...this.kitchen.slotPos(ev.slot));
         this.popup(at.x, at.y, `+${ev.earned}`, '#7dff8a');

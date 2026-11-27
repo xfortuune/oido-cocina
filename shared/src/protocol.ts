@@ -42,6 +42,7 @@
 //   'sorpresa' string: lo que ha salido de la caja sorpresa
 //   'unlock'   HatId: (solo a quien la compra) ropa especial desbloqueada para siempre
 //   'perfil'   Profile: (solo a cada uno) su perfil, al entrar y tras cada ronda
+//   'vs'       VersusScore[]: marcador del versus (unas veces por segundo)
 //   'logro'    { id, name, description }[]: (solo a cada uno) logros recién conseguidos
 
 import type { Campaign } from './campaign';
@@ -102,7 +103,27 @@ export interface InputMessage {
 
 export type RoomPhase = 'lobby' | 'playing' | 'summary' | 'perks' | 'shop' | 'gestion' | 'cierre';
 
-export type Juego = 'campana' | 'desafio';
+export type Juego = 'campana' | 'desafio' | 'versus';
+
+/** Versus: los dos equipos. */
+export const TEAMS = [
+  { name: 'Mandarinas', color: 0xff8a3d, css: '#ff8a3d' },
+  { name: 'Pepinillos', color: 0x5cc46a, css: '#5cc46a' },
+] as const;
+
+/** Versus: marcador de los dos equipos (se manda unas veces por segundo durante la ronda). */
+export interface VersusScore {
+  money: number;
+  served: number;
+  /** Clientes que este equipo le ha quitado al otro. */
+  stolen: number;
+}
+
+export interface VersusSummary {
+  teams: (VersusScore & { players: string[] })[];
+  /** Equipo ganador (-1: empate). */
+  winner: number;
+}
 
 export interface LobbyMember {
   id: string;
@@ -122,6 +143,8 @@ export interface LobbyMember {
   chefKey?: string;
   /** Logros conseguidos (perfil). */
   logros?: number;
+  /** Versus: equipo (0 o 1). */
+  team?: number;
 }
 
 export interface EmoteMessage {
@@ -208,4 +231,6 @@ export interface SummaryInfo {
   wages: number;
   /** Solo cuando se acaba la partida. */
   run: RunSummary | null;
+  /** Solo en el versus. */
+  versus?: VersusSummary | null;
 }

@@ -470,10 +470,19 @@ Lo que se compra en la campaña aparece en la escena: terraza con sombrillas, me
 flotando, el letrero de neón BURGER que parpadea, cuadros y el tarro de propinas; y los empleados aparecen junto a su
 puesto.
 
+### Versus
+
+Desde el menú, **Versus**: dos equipos (Mandarinas y Pepinillos), cada uno en su cocina, con **los mismos clientes**
+llegando a la vez a las dos. Quien sirve antes se queda el cliente: en la otra cocina se va (y lo entregado a medias
+se pierde). Gana el equipo que más dinero haga en 2:30. En la sala se cambia de equipo con un toque (hace falta al menos
+uno en cada uno); todos pueden usar toda la cocina, sin caja. Durante la ronda se ve el marcador arriba y, al acabar,
+el resumen con dinero, servidos, clientes robados y el MVP; «Revancha» vuelve a la sala. Ganar cuenta para los logros
+«Duelo de cocinas» y «Rey del barrio».
+
 ### Perfil y logros
 
 Cada cocinero tiene un perfil con sus estadísticas de siempre (pedidos, perfectos, mejor racha, mejor nivel, días de
-campaña, veces MVP…) y 19 logros, de «¡Oído!» (primer pedido) a «Leyenda» (los 20 niveles del Desafío), pasando por
+campaña, veces MVP…) y 21 logros, de «¡Oído!» (primer pedido) a «Leyenda» (los 20 niveles del Desafío), pasando por
 rachas, rondas impecables, el crítico, concursos, festivos o abrir con nieve. Se guarda en el servidor
 (`DATA_DIR/perfiles.json`) por cuenta de Discord o, en el navegador, por nombre. Al conseguir un logro sale un aviso
 arriba; en la sala se ve cuántos logros tiene cada uno, y desde el menú, «Perfil y logros» enseña el tuyo con el

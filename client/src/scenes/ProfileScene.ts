@@ -104,6 +104,7 @@ export class ProfileScene extends Phaser.Scene {
       ['Críticos contentos', String(st.critics)],
       ['Días de campaña', String(st.days)],
       ['Concursos ganados', String(st.contestsWon)],
+      ['Versus ganados', String(st.versusWins ?? 0)],
       ['Cosas quemadas', String(st.burnt)],
       ['Cocinando desde', new Date(p.since).toLocaleDateString('es-ES')],
     ];

@@ -68,6 +68,7 @@ import {
   decide,
   openFranchise,
   type RoundRecord,
+  type VersusScore,
 } from '@hora-punta/shared';
 import { discordConfig, fetchUser, type DiscordUser } from './discord.ts';
 import { loadCampaign, saveCampaign } from './campaignStore.ts';
@@ -116,6 +117,11 @@ export class KitchenRoom extends Room {
   private grupo = '';
   private members = new Map<string, LobbyMember>();
   private sim: KitchenSim | null = null;
+  /** Versus: la cocina del segundo equipo (la del primero es `sim`), cuándo llega el próximo cliente y clientes robados. */
+  private simB: KitchenSim | null = null;
+  private vsTimer = 0;
+  private vsStolen = [0, 0];
+  private vsSent = 0;
   private summary: SummaryInfo | null = null;
   private lastInput = new Map<string, number>();
   private lastEmote = new Map<string, number>();
@@ -142,6 +148,17 @@ export class KitchenRoom extends Room {
       this.phase = 'gestion';
       this.registerCampaignMessages();
     }
+    if (options.juego === 'versus') {
+      // Versus: dos equipos, todos lo hacen todo.
+      this.juego = 'versus';
+      this.estilo = 'libre';
+    }
+    this.onMessage('team', (client) => {
+      const m = this.members.get(client.sessionId);
+      if (this.juego !== 'versus' || this.phase === 'playing' || !m) return;
+      m.team = m.team === 1 ? 0 : 1;
+      this.broadcastRoom();
+    });
 
     this.onMessage('input', (client, msg: InputMessage) => this.applyInput(client.sessionId, msg));
     // Modo de juego: se elige en la sala antes de empezar la partida (nivel 1) y se mantiene hasta perder.
@@ -160,13 +177,14 @@ export class KitchenRoom extends Room {
       if (next === this.pausedBy) return;
       this.pausedBy = next;
       // Al pausar, que nadie se quede andando solo.
-      if (this.sim) for (const p of this.sim.players.values()) p.inputX = p.inputY = 0;
+      for (const s of [this.sim, this.simB]) if (s) for (const p of s.players.values()) p.inputX = p.inputY = 0;
       this.broadcastRoom();
     });
     this.onMessage('interact', (client, msg: InputMessage) => {
-      if (this.phase !== 'playing' || !this.sim || this.pausedBy) return;
+      const sim = this.simOf(client.sessionId);
+      if (this.phase !== 'playing' || !sim || this.pausedBy) return;
       this.applyInput(client.sessionId, msg);
-      this.sim.interact(client.sessionId);
+      sim.interact(client.sessionId);
     });
     this.onMessage('hello', (client) => {
       client.send('room', this.roomInfo());
@@ -179,7 +197,7 @@ export class KitchenRoom extends Room {
       const clean = String(name ?? '').trim().slice(0, 20);
       if (!member || !clean) return;
       member.name = clean;
-      const p = this.sim?.players.get(client.sessionId);
+      const p = this.simOf(client.sessionId)?.players.get(client.sessionId);
       if (p) p.name = clean;
       this.broadcastRoom();
     });
@@ -191,10 +209,16 @@ export class KitchenRoom extends Room {
       this.assignRoles();
       this.broadcastRoom();
     });
-    this.onMessage('start', () => this.juego === 'desafio' && this.startTurn());
+    this.onMessage('start', () => (this.juego === 'versus' ? this.startVersus() : this.juego === 'desafio' && this.startTurn()));
     // Tras el resumen: habilidades (cada 2 niveles), tienda y sala. Si se ha acabado la partida, a la sala.
     this.onMessage('lobby', () => {
       if (this.phase !== 'summary') return;
+      if (this.juego === 'versus') {
+        this.summary = null;
+        this.phase = 'lobby';
+        this.broadcastRoom();
+        return;
+      }
       const { perkNext = false, passed = false, won = false } = this.summary ?? {};
       this.summary = null;
       if (perkNext) this.offerPerks();
@@ -273,6 +297,11 @@ export class KitchenRoom extends Room {
     const profile = getProfile(profileKey, name, user?.avatar ?? null);
     member.logros = Object.keys(profile.achievements).length;
     client.send('perfil', profile);
+    // Versus: al equipo con menos gente.
+    if (this.juego === 'versus') {
+      const n1 = [...this.members.values()].filter((m) => m.team === 1).length;
+      member.team = n1 < this.members.size - n1 ? 1 : 0;
+    }
     this.members.set(client.sessionId, member);
     if (this.juego === 'campana') this.modo = Math.max(1, Math.min(MAX_PLAYERS, this.members.size));
     if (this.phase !== 'playing') this.assignRoles();
@@ -280,7 +309,7 @@ export class KitchenRoom extends Room {
     else if (this.estilo === 'libre') member.roles = [...ROLES];
 
     // Quien entra a mitad de turno ayuda llevando cosas hasta el siguiente turno.
-    this.sim?.addPlayer(member.id, member.name, member.color, member.roles, member.perks, member.look);
+    this.simOf(member.id)?.addPlayer(member.id, member.name, member.color, member.roles, member.perks, member.look);
     this.broadcastRoom();
     if (this.summary) client.send('summary', this.summary);
   }
@@ -294,6 +323,7 @@ export class KitchenRoom extends Room {
     const leaving = this.members.get(client.sessionId);
     this.members.delete(client.sessionId);
     this.sim?.removePlayer(client.sessionId);
+    this.simB?.removePlayer(client.sessionId);
     this.lastInput.delete(client.sessionId);
     this.memberKeys.delete(client.sessionId);
     this.profileKeys.delete(client.sessionId);
@@ -382,14 +412,24 @@ export class KitchenRoom extends Room {
   }
 
   private applyInput(id: string, msg: InputMessage): void {
-    if (!this.sim || !msg || this.pausedBy) return;
+    const sim = this.simOf(id);
+    if (!sim || !msg || this.pausedBy) return;
     const now = Date.now();
     const dt = (now - (this.lastInput.get(id) ?? now - TICK_MS)) / 1000;
     this.lastInput.set(id, now);
-    this.sim.setPose(id, Number(msg.x), Number(msg.y), Number(msg.fx), Number(msg.fy), !!msg.moving, dt);
+    sim.setPose(id, Number(msg.x), Number(msg.y), Number(msg.fx), Number(msg.fy), !!msg.moving, dt);
+  }
+
+  /** La cocina de cada jugador (en el versus, la de su equipo). */
+  private simOf(id: string): KitchenSim | null {
+    return this.juego === 'versus' && this.members.get(id)?.team === 1 ? this.simB : this.sim;
   }
 
   private tick(deltaMs: number): void {
+    if (this.juego === 'versus') {
+      this.tickVersus(deltaMs);
+      return;
+    }
     const sim = this.sim;
     if (this.phase !== 'playing' || !sim || this.pausedBy) return;
     sim.tick(Math.min(deltaMs, 200) / 1000);
@@ -608,9 +648,10 @@ export class KitchenRoom extends Room {
   }
 
   /** Apunta la ronda en el perfil de cada cocinero y avisa de los logros nuevos. */
-  private recordProfiles(sim: KitchenSim, mvpId: string | null, extra: Partial<RoundRecord>): void {
+  private recordProfiles(sim: KitchenSim, mvpId: string | null, extra: Partial<RoundRecord>, only?: (m: LobbyMember) => boolean): void {
     const st = sim.stats;
     for (const m of this.members.values()) {
+      if (only && !only(m)) continue;
       const key = this.profileKeys.get(m.id);
       if (!key) continue;
       const { profile, fresh } = recordProfile(key, m.name, {
@@ -632,6 +673,124 @@ export class KitchenRoom extends Room {
       client?.send('perfil', profile);
       if (fresh.length) client?.send('logro', fresh.map((a) => ({ id: a.id, name: a.name, description: a.description })));
     }
+  }
+
+  // ---------------------------------------------------------------- versus
+
+  /** Dos cocinas iguales, una por equipo, con los mismos clientes. Hace falta al menos uno en cada equipo. */
+  private startVersus(): void {
+    if (this.phase === 'playing') return;
+    const teams = [0, 1].map((t) => [...this.members.values()].filter((m) => (m.team ?? 0) === t));
+    if (teams.some((t) => t.length === 0)) return;
+    const size = Math.max(teams[0].length, teams[1].length);
+    const params = { ...levelParams(6, size, 'libre'), incidents: 0, duration: 150, night: false };
+    const make = (team: LobbyMember[]) => {
+      const s = new KitchenSim(params, Math.random, [], 'barrio');
+      s.moveOnTick = false;
+      s.needsCaja = false;
+      s.externalOrders = true;
+      if (this.turnDuration) s.turnDuration = this.turnDuration;
+      for (const m of team) s.addPlayer(m.id, m.name, m.color, [...ROLES], [], m.look);
+      return s;
+    };
+    for (const m of this.members.values()) m.roles = [...ROLES];
+    this.sim = make(teams[0]);
+    this.simB = make(teams[1]);
+    this.vsTimer = 2;
+    this.vsStolen = [0, 0];
+    this.summary = null;
+    this.pausedBy = null;
+    this.phase = 'playing';
+    this.broadcastRoom();
+  }
+
+  private tickVersus(deltaMs: number): void {
+    const a = this.sim;
+    const b = this.simB;
+    if (this.phase !== 'playing' || !a || !b || this.pausedBy) return;
+    const dt = Math.min(deltaMs, 200) / 1000;
+    a.tick(dt);
+    b.tick(dt);
+    // Los clientes llegan a las dos cocinas a la vez, al mismo hueco.
+    if (!a.orders.length && !b.orders.length) this.vsTimer = Math.min(this.vsTimer, 2);
+    this.vsTimer -= dt;
+    if (this.vsTimer <= 0 && !a.ended && !b.ended) {
+      const p = a.params;
+      if (a.orders.length < p.maxOrders && b.orders.length < p.maxOrders) {
+        const o = a.spawnOrder(new Set(b.orders.map((x) => x.slot)), false);
+        if (o) {
+          a.injectOrder(o);
+          b.injectOrder(o);
+        }
+      }
+      this.vsTimer = p.spawnStart + (p.spawnEnd - p.spawnStart) * a.progress;
+    }
+    // Quien sirve primero se queda el cliente: en la otra cocina se va.
+    const evA = a.drainEvents();
+    const evB = b.drainEvents();
+    for (const ev of evA) if (ev.type === 'served' && b.removeOrder(ev.orderId)) this.vsStolen[0]++;
+    for (const ev of evB) if (ev.type === 'served' && a.removeOrder(ev.orderId)) this.vsStolen[1]++;
+    evA.push(...a.drainEvents());
+    evB.push(...b.drainEvents());
+    const snaps = [a.snapshot(), b.snapshot()];
+    for (const client of this.clients) {
+      const t = this.members.get(client.sessionId)?.team === 1 ? 1 : 0;
+      const ev = t ? evB : evA;
+      if (ev.length) client.send('events', ev);
+      client.send('snap', snaps[t]);
+    }
+    this.vsSent -= deltaMs;
+    if (this.vsSent <= 0) {
+      this.vsSent = 250;
+      this.broadcast('vs', this.versusScores());
+    }
+    if (a.ended && b.ended) this.finishVersus();
+  }
+
+  private versusScores(): VersusScore[] {
+    return [this.sim, this.simB].map((s, i) => ({ money: s?.money ?? 0, served: s?.stats.served ?? 0, stolen: this.vsStolen[i] }));
+  }
+
+  private finishVersus(): void {
+    const a = this.sim!;
+    const b = this.simB!;
+    const scores = this.versusScores();
+    const diff = scores[0].money - scores[1].money || scores[0].served - scores[1].served;
+    const winner = diff > 0 ? 0 : diff < 0 ? 1 : -1;
+    const teams = scores.map((sc, t) => ({ ...sc, players: [...this.members.values()].filter((m) => (m.team ?? 0) === t).map((m) => m.name) }));
+    [a, b].forEach((sim, t) => {
+      const mine = [...this.members.values()].filter((m) => (m.team ?? 0) === t);
+      const mvp = [...mine].sort((x, y) => mvpScore(sim.playerStats[y.id] ?? NO_STATS) - mvpScore(sim.playerStats[x.id] ?? NO_STATS))[0];
+      this.recordProfiles(sim, mvp?.id ?? null, { versusWin: winner === t }, (m) => (m.team ?? 0) === t);
+    });
+    const players = [...this.members.values()].map((m) => {
+      const stats = this.simOf(m.id)?.playerStats[m.id] ?? NO_STATS;
+      return { ...m, perks: [], stats, score: mvpScore(stats) };
+    });
+    this.summary = {
+      stats: a.stats,
+      money: a.money,
+      reputation: Math.max(0, a.reputation),
+      endReason: a.endReason ?? 'time',
+      players,
+      mvpId: [...players].sort((x, y) => y.score - x.score)[0]?.id ?? null,
+      level: a.level,
+      goal: 0,
+      passed: false,
+      stars: 0,
+      won: false,
+      perkNext: false,
+      earnedRound: 0,
+      wages: 0,
+      run: null,
+      versus: { teams, winner },
+    };
+    this.sim = null;
+    this.simB = null;
+    this.pausedBy = null;
+    this.phase = 'summary';
+    this.broadcast('summary', this.summary);
+    this.broadcastRoom();
   }
 
   /** Resumen de la partida entera y entrada en el ranking del grupo. */

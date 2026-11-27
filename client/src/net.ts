@@ -17,6 +17,7 @@ import {
   type SimSnapshot,
   type SummaryInfo,
   type Profile,
+  type VersusScore,
 } from '@hora-punta/shared';
 
 /**
@@ -34,6 +35,8 @@ class Net extends Phaser.Events.EventEmitter {
   summary: SummaryInfo | null = null;
   /** Tu perfil (el último que mandó el servidor, o el guardado de otra vez). */
   profile: Profile | null = loadProfile();
+  /** Versus: marcador de los dos equipos durante la ronda. */
+  vs: VersusScore[] | null = null;
 
   get connected(): boolean {
     return this.room !== null;
@@ -88,6 +91,10 @@ class Net extends Phaser.Events.EventEmitter {
       }
       this.emit('perfil', p);
     });
+    room.onMessage('vs', (vs: VersusScore[]) => {
+      this.vs = vs;
+      this.emit('vs', vs);
+    });
     room.onMessage('logro', (list: { id: string; name: string; description: string }[]) => this.emit('logro', list));
     room.onMessage('emote', (msg: EmoteMessage) => this.emit('emote', msg));
     room.onMessage('summary', (summary: SummaryInfo) => {
@@ -137,6 +144,11 @@ class Net extends Phaser.Events.EventEmitter {
 
   setModo(modo: number): void {
     this.room?.send('modo', modo);
+  }
+
+  /** Versus: cambiarse al otro equipo. */
+  switchTeam(): void {
+    this.room?.send('team');
   }
 
   start(): void {

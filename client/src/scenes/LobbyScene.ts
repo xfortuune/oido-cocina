@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ESTILO_NAMES, ESTILOS, formatDuration, getPerk, getRecipe, levelParams, LIBRE_RUSH, newRecipesAt, ROLE_NAMES, ROLES, type Role, type RoomInfo } from '@hora-punta/shared';
+import { TEAMS, ESTILO_NAMES, ESTILOS, formatDuration, getPerk, getRecipe, levelParams, LIBRE_RUSH, newRecipesAt, ROLE_NAMES, ROLES, type Role, type RoomInfo } from '@hora-punta/shared';
 import { getIdentity, isInDiscord, openInvite } from '../discord';
 import { audio } from '../audio';
 import { net, saveName, savedName, savedRecord } from '../net';
@@ -34,13 +34,17 @@ export class LobbyScene extends Phaser.Scene {
   private modo = 2;
   /** Cuadro para cambiar el nombre (null si está cerrado). */
   private nameInput: NameInput | null = null;
+  /** Sala de versus (dos equipos). */
+  private versus = false;
 
   constructor() {
     super('lobby');
   }
 
-  init(data: { modo?: number }): void {
+  init(data: { modo?: number; versus?: boolean }): void {
     if (data?.modo) this.modo = data.modo;
+    // Sin datos (volviendo del resumen), se sigue en la misma sala.
+    this.versus = data?.versus ?? net.info?.juego === 'versus';
   }
 
   create(): void {
@@ -71,8 +75,16 @@ export class LobbyScene extends Phaser.Scene {
       this.closeNameDialog();
     });
 
-    if (net.connected && net.info) {
+    const juego = this.versus ? 'versus' : 'desafio';
+    if (net.connected && net.info?.juego === juego) {
       onRoom(net.info);
+      return;
+    }
+    if (net.connected) {
+      // Venimos de otra sala (por ejemplo, del Desafío al versus): se sale antes.
+      this.status = 'Conectando con la cocina…';
+      this.build();
+      void net.leave().then(() => this.connect());
       return;
     }
     this.status = 'Conectando con la cocina…';
@@ -85,7 +97,7 @@ export class LobbyScene extends Phaser.Scene {
       const { join } = await getIdentity(savedName);
       // Una partida de un jugador es privada: sala propia aunque estés en un canal de voz con más gente.
       const sala = this.modo === 1 ? `${join.sala}-solo-${Math.random().toString(36).slice(2, 8)}` : join.sala;
-      await net.connect({ ...join, sala, modo: this.modo });
+      await net.connect({ ...join, sala, modo: this.versus ? 2 : this.modo, ...(this.versus ? { juego: 'versus' as const } : {}) });
       this.status = '';
     } catch (err) {
       console.error(err);
@@ -136,6 +148,10 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     loadAvatars(this, info.members, () => this.build());
+    if (info.juego === 'versus') {
+      this.buildVersus(info, W, H, s, y);
+      return;
+    }
     const salaLabel = isInDiscord() ? 'Canal de voz' : `Sala «${info.sala}»`;
     txt(this, W / 2, y, `${salaLabel} · partida de ${info.modo} jugadores`, 15 * s, { color: '#fff4dcbb' }).setOrigin(0.5, 0);
     y += 26 * s;
@@ -321,6 +337,73 @@ export class LobbyScene extends Phaser.Scene {
         wordWrap: { width: W - 30 },
       }).setOrigin(0.5, 0);
     }
+    if (this.nameInput) this.drawNameDialog(W, H, s);
+  }
+
+  /** Sala del versus: dos equipos (toca para cambiarte) y a cocinar. */
+  private buildVersus(info: RoomInfo, W: number, H: number, s: number, y: number): void {
+    txt(this, W / 2, y, 'Versus: dos cocinas, los mismos clientes. Quien sirve antes se queda el cliente; gana quien más dinero haga en 2:30.', 14 * s, {
+      color: '#fff4dccc',
+      align: 'center',
+      wordWrap: { width: Math.min(W - 30, 560) },
+    }).setOrigin(0.5, 0);
+    y += 52 * s;
+    const boxW = Math.min(W - 24, 620);
+    const colW = (boxW - 12) / 2;
+    const x0 = W / 2 - boxW / 2;
+    const rowH = 34 * s;
+    const panelH = 50 * s + 2 * rowH + 10;
+    TEAMS.forEach((team, t) => {
+      const x = x0 + t * (colW + 12);
+      const g = this.add.graphics();
+      pixelPanel(g, x, y, colW, panelH, COLORS.panel);
+      g.fillStyle(team.color).fillRect(x + 4, y + 4, colW - 8, 30 * s);
+      txt(this, x + colW / 2, y + 4 + 15 * s, team.name, 18 * s, { color: '#ffffff', stroke: '#2b1d14', strokeThickness: 4 }).setOrigin(0.5);
+      info.members
+        .filter((m) => (m.team ?? 0) === t)
+        .forEach((m, i) => {
+          const ry = y + 44 * s + i * rowH + rowH / 2;
+          this.add.image(x + 18, ry + 8 * s, chefKey(m.look ?? m.color, 'down', 0)).setScale(Math.max(1, Math.round(1.4 * s))).setOrigin(0.5, 1);
+          const nt = txt(this, x + 34, ry, `${m.name}${m.id === net.id ? ' (tú)' : ''}`, 15 * s, { color: CHEF_COLORS[m.color][1] }).setOrigin(0, 0.5);
+          if (nt.width > colW - 40) nt.setScale((colW - 40) / nt.width);
+        });
+    });
+    y += panelH + 12 * s;
+    new Button(this, W / 2, y + 22 * s, {
+      w: Math.min(boxW, 280),
+      h: 42 * s,
+      color: COLORS.blue,
+      label: 'Cambiarme de equipo',
+      fontSize: 16 * s,
+      onPress: () => net.switchTeam(),
+    });
+    y += 54 * s;
+    const ready = TEAMS.every((_, t) => info.members.some((m) => (m.team ?? 0) === t));
+    if (!ready) {
+      txt(this, W / 2, y, 'Hace falta al menos un cocinero en cada equipo.', 15 * s, { color: '#ffc93c' }).setOrigin(0.5, 0);
+      y += 24 * s;
+    }
+    const discord = isInDiscord();
+    const btnW = Math.min((boxW - 20) / 3, 220);
+    const btnY = Math.min(H - 40 * s, y + 40 * s);
+    const bx = (i: number) => W / 2 + (i - 1) * (btnW + 10);
+    new Button(this, bx(0), btnY, { w: btnW, h: 56 * s, color: COLORS.orange, label: 'Salir', fontSize: 18 * s, onPress: () => this.scene.start('menu') });
+    new Button(this, bx(1), btnY, {
+      w: btnW,
+      h: 56 * s,
+      color: discord ? 0x5865f2 : COLORS.blue,
+      label: discord ? 'Invitar' : 'Cambiar nombre',
+      fontSize: 18 * s,
+      onPress: () => (discord ? void openInvite() : this.openNameDialog()),
+    });
+    new Button(this, bx(2), btnY, {
+      w: btnW,
+      h: 56 * s,
+      color: ready ? COLORS.green : 0x8a8a8a,
+      label: '¡A cocinar!',
+      fontSize: 20 * s,
+      onPress: () => ready && net.start(),
+    });
     if (this.nameInput) this.drawNameDialog(W, H, s);
   }
 

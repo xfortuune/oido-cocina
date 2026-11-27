@@ -370,4 +370,37 @@ const run = chef.summary.run;
 check(run?.levelsPassed === 2 && run.served >= 2 && run.players[0].perks[0] === offer[0], `Resumen de la partida: ${run?.levelsPassed} niveles, ${run?.served} hamburguesas`);
 check(run?.position === 1 && run.ranking[0].names[0] === 'Chef', 'Entra el primero en el ranking del grupo');
 await chef.room.leave();
+
+// Versus: dos equipos con los mismos clientes; quien sirve antes se queda el cliente.
+{
+  const vsSala = `versus-${Date.now()}`;
+  const va = await bot('Vera', { sala: vsSala, juego: 'versus', turno: 12 });
+  const vb = await bot('Víctor', { sala: vsSala, juego: 'versus', turno: 12 });
+  vb.room.onMessage('vs', () => {});
+  va.room.onMessage('vs', (x) => (va.vs = x));
+  await wait(400);
+  const teams = va.info.members.map((m) => m.team).sort().join(',');
+  check(va.info.juego === 'versus' && teams === '0,1', `Versus: uno en cada equipo (${teams})`);
+  vb.room.send('team');
+  await wait(300);
+  check(va.info.members.every((m) => m.team === 0), 'Víctor se cambia de equipo (los dos en Mandarinas)');
+  va.room.send('start');
+  await wait(300);
+  check(va.info.phase === 'lobby', 'Con un equipo vacío no se empieza');
+  vb.room.send('team');
+  await wait(300);
+  va.room.send('start');
+  while (!va.snap?.orders.length || !vb.snap?.orders.length) await wait(100);
+  await wait(200);
+  const ids = (b) => b.snap.orders.map((o) => `${o.id}:${o.slot}:${o.recipeId}`).sort().join('|');
+  check(ids(va) === ids(vb) && va.snap.players.length === 1 && vb.snap.players.length === 1, `Las dos cocinas tienen los mismos clientes (${ids(va)}) y un cocinero cada una`);
+  while (!va.summary) await wait(300);
+  const v = va.summary.versus;
+  check(v && v.teams.length === 2 && v.teams[0].players[0] === 'Vera' && [-1, 0, 1].includes(v.winner) && va.vs?.length === 2, `Resumen del versus: ganador ${v?.winner}, marcador ${JSON.stringify(va.vs)}`);
+  va.room.send('lobby');
+  await wait(300);
+  check(va.info.phase === 'lobby', 'Revancha: vuelta a la sala del versus');
+  await va.room.leave();
+  await vb.room.leave();
+}
 process.exit(0);

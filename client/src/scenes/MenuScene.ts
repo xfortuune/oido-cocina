@@ -61,7 +61,7 @@ export class MenuScene extends Phaser.Scene {
           ]
         : [
             'Campaña: llevad entre amigos vuestro propio restaurante. Comprad ingredientes, poned precios y cocinad cada día.',
-            'Desafío: 20 niveles de cocina sin parar.',
+            'Desafío: 20 niveles sin parar. Versus: equipo contra equipo.',
             touch ? 'Joystick para moverte, botón naranja para la acción.' : 'WASD o flechas para moverte, Espacio para la acción.',
           ]
     ).join('\n');
@@ -118,7 +118,15 @@ export class MenuScene extends Phaser.Scene {
         fontSize: 22 * s,
         onPress: () => this.scene.restart({ desafio: true }),
       });
-      rows = 2;
+      new Button(this, W / 2, y + bh * 2.6 + gap * 2, {
+        w: bw,
+        h: bh,
+        color: COLORS.blue,
+        label: 'Versus',
+        fontSize: 22 * s,
+        onPress: () => this.scene.start('lobby', { versus: true }),
+      });
+      rows = 3;
     }
 
     // Tu cocinero y ranking del grupo (en el Desafío, «Volver» en vez de «Tu cocinero»).

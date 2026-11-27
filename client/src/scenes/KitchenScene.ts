@@ -970,6 +970,9 @@ export class KitchenScene extends Phaser.Scene {
         this.lastActionSound = now;
         break;
       }
+      case 'stolen':
+        this.sendAway(ev.orderId, false);
+        break;
       case 'spill':
         audio.sfx('drop');
         break;

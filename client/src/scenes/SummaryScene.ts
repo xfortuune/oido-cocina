@@ -9,6 +9,8 @@ import {
   type RoomInfo,
   type RunSummary,
   type SummaryInfo,
+  type VersusSummary,
+  TEAMS,
 } from '@hora-punta/shared';
 import { audio } from '../audio';
 import { net, savedRecord } from '../net';
@@ -45,7 +47,11 @@ export class SummaryScene extends Phaser.Scene {
 
     audio.music(null);
     const summary = net.summary;
-    if (summary) {
+    if (summary?.versus) {
+      const won = summary.versus.winner === (net.me?.team === 1 ? 1 : 0);
+      audio.sfx(won ? 'levelUp' : 'runOver');
+      if (won) this.time.delayedCall(150, () => this.confetti(60));
+    } else if (summary) {
       audio.sfx(summary.passed ? 'levelUp' : 'runOver');
       if (summary.passed) this.time.delayedCall(150, () => this.confetti(summary.won ? 90 : 40));
     }
@@ -57,8 +63,61 @@ export class SummaryScene extends Phaser.Scene {
     drawBackground(this);
     const summary = net.summary;
     if (!summary) return;
-    if (summary.run) this.buildRun(summary, summary.run);
+    if (summary.versus) this.buildVersus(summary, summary.versus);
+    else if (summary.run) this.buildRun(summary, summary.run);
     else this.buildRound(summary);
+  }
+
+  // ---------------------------------------------------------------- versus
+
+  private buildVersus(summary: SummaryInfo, vs: VersusSummary): void {
+    const { width: W, height: H } = this.scale;
+    const s = clamp(Math.min(W / 480, H / 760), 0.7, 1.3);
+    const mine = net.me?.team === 1 ? 1 : 0;
+    let y = 18 * s;
+    const title = vs.winner === -1 ? '¡Empate!' : vs.winner === mine ? '¡Habéis ganado!' : '¡Habéis perdido!';
+    txt(this, W / 2, y, title, 34 * s, { color: vs.winner === mine ? '#ffc93c' : '#ff8a73', stroke: '#2b1d14', strokeThickness: 7 * s }).setOrigin(0.5, 0);
+    y += 50 * s;
+    if (vs.winner >= 0) {
+      txt(this, W / 2, y, `Gana el equipo ${TEAMS[vs.winner].name}`, 17 * s, { color: TEAMS[vs.winner].css, stroke: '#2b1d14', strokeThickness: 4 }).setOrigin(0.5, 0);
+      y += 30 * s;
+    }
+    const boxW = Math.min(W - 20, 620);
+    const colW = (boxW - 12) / 2;
+    const x0 = W / 2 - boxW / 2;
+    const fs = clamp(15 * s, 12, 18);
+    const rows: [string, (t: VersusSummary['teams'][number]) => string][] = [
+      ['Dinero', (t) => String(t.money)],
+      ['Servidos', (t) => String(t.served)],
+      ['Clientes robados', (t) => String(t.stolen)],
+    ];
+    const panelH = 46 * s + rows.length * fs * 1.7 + 12 + 4 * fs * 1.4;
+    vs.teams.forEach((team, t) => {
+      const x = x0 + t * (colW + 12);
+      const g = this.add.graphics();
+      pixelPanel(g, x, y, colW, panelH, vs.winner === t ? 0xfff0b0 : COLORS.panel);
+      g.fillStyle(TEAMS[t].color).fillRect(x + 4, y + 4, colW - 8, 32 * s);
+      txt(this, x + colW / 2, y + 4 + 16 * s, `${TEAMS[t].name}${vs.winner === t ? ' · ganador' : ''}`, 18 * s, { color: '#ffffff', stroke: '#2b1d14', strokeThickness: 4 }).setOrigin(0.5);
+      let ry = y + 46 * s;
+      for (const [label, value] of rows) {
+        txt(this, x + 12, ry, label, fs * 0.85).setAlpha(0.7);
+        txt(this, x + colW - 12, ry, value(team), fs * 1.1).setOrigin(1, 0);
+        ry += fs * 1.7;
+      }
+      ry += 6;
+      for (const name of team.players) {
+        const nt = txt(this, x + 12, ry, name, fs * 0.9, { color: '#4a3a2c' });
+        if (nt.width > colW - 24) nt.setScale((colW - 24) / nt.width);
+        ry += fs * 1.4;
+      }
+    });
+    y += panelH + 14 * s;
+    const mvp = summary.players.find((p) => p.id === summary.mvpId);
+    if (mvp && mvp.score > 0) {
+      txt(this, W / 2, y, `MVP del duelo: ${mvp.name}`, 16 * s, { color: '#ffc93c', stroke: '#2b1d14', strokeThickness: 4 }).setOrigin(0.5, 0);
+      y += 28 * s;
+    }
+    this.buttons(y, s, boxW, 'Revancha', 'Cualquiera puede pulsar «Revancha» para volver a la sala');
   }
 
   // ---------------------------------------------------------------- ronda superada

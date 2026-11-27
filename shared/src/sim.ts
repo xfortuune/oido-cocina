@@ -210,7 +210,9 @@ export type SimEvent =
   | { type: 'blocked'; playerId: string; kind: IncidentKind }
   /** Una mancha en el suelo (refresco, aceite…) y cómo va la limpieza. */
   | { type: 'spill'; x: number; y: number }
-  | { type: 'clean'; x: number; y: number; left: number };
+  | { type: 'clean'; x: number; y: number; left: number }
+  /** Versus: el otro equipo ha servido antes a este cliente. */
+  | { type: 'stolen'; orderId: number; slot: number };
 
 export type EndReason = 'time' | 'reputation';
 
@@ -288,6 +290,8 @@ export class KitchenSim {
   /** Ventanilla de los pedidos para llevar (si la cocina tiene). */
   readonly windowTile: Tile | undefined;
   private takeawayTimer = 20;
+  /** Versus: los clientes los pone la sala (los mismos en las dos cocinas), no la simulación. */
+  externalOrders = false;
   private spillTimer = 25;
 
   /** Fallos perdonados por el Seguro de cocina y cada cuánto trabajan los empleados. */
@@ -613,7 +617,7 @@ export class KitchenSim {
     // Nunca dejamos la cocina vacía mucho rato.
     if (this.orders.length === 0) this.spawnTimer = Math.min(this.spawnTimer, 2);
     this.spawnTimer -= dt;
-    if (this.spawnTimer <= 0) {
+    if (this.spawnTimer <= 0 && !this.externalOrders) {
       // Con el autobús de turistas se llenan todos los huecos de la calle.
       const limit = this.incident?.kind === 'autobus' ? this.slots.length : this.params.maxOrders;
       if (this.orders.length < limit || this.pendingSpecial) this.spawnOrder();
@@ -911,15 +915,19 @@ export class KitchenSim {
     this.events.push({ type: 'served', orderId: order.id, slot: order.slot, earned, tip, perfect, streak: this.streak, bonus });
   }
 
-  private spawnOrder(): void {
-    const used = new Set(this.orders.map((o) => o.slot));
+  /**
+   * Un cliente nuevo en un hueco libre. Con `push` false no se añade: lo devuelve (versus: la sala lo pone en
+   * las dos cocinas); `busy` son huecos ocupados además de los de esta cocina.
+   */
+  spawnOrder(busy?: ReadonlySet<number>, push = true): Order | null {
+    const used = new Set([...this.orders.map((o) => o.slot), ...(busy ?? [])]);
     const free = this.slots.map((_, i) => i).filter((i) => !used.has(i));
-    if (free.length === 0) return;
+    if (free.length === 0) return null;
     const slot = free[Math.floor(this.random() * free.length)];
     if (this.pendingSpecial) {
       this.spawnSpecial(this.pendingSpecial, slot);
       this.pendingSpecial = null;
-      return;
+      return null;
     }
     const { recipes } = this.params;
     // Una receta recién estrenada (hace 2 niveles o menos) sale algo más, para que se note la novedad.
@@ -951,8 +959,26 @@ export class KitchenSim {
       slot,
       look: Math.floor(this.random() * 1000),
     });
+    if (push) this.injectOrder(order);
+    else this.nextId--;
+    return order;
+  }
+
+  /** Pone un cliente ya hecho (una copia), con su mismo número de pedido. */
+  injectOrder(o: Order): void {
+    const order: Order = JSON.parse(JSON.stringify(o));
     this.orders.push(order);
+    this.nextId = Math.max(this.nextId, order.id + 1);
     this.events.push({ type: 'newOrder', orderId: order.id });
+  }
+
+  /** Versus: el otro equipo ha servido a este cliente; aquí se va (y lo entregado a medias se pierde). */
+  removeOrder(id: number): boolean {
+    const order = this.orders.find((o) => o.id === id);
+    if (!order) return false;
+    this.orders = this.orders.filter((o) => o !== order);
+    this.events.push({ type: 'stolen', orderId: id, slot: order.slot });
+    return true;
   }
 
   /**
@@ -1174,7 +1200,7 @@ export class KitchenSim {
 
   /** Desde el nivel 3, de vez en cuando llega un repartidor a la ventanilla a por un pedido (como mucho 2 a la vez). */
   private updateTakeaway(dt: number): void {
-    if (!this.windowTile || this.level < 3 || this.contest) return;
+    if (!this.windowTile || this.level < 3 || this.contest || this.externalOrders) return;
     this.takeawayTimer -= dt;
     if (this.takeawayTimer > 0) return;
     this.takeawayTimer = lerp(30, 18, this.progress) / (this.params.takeaway ?? 1);

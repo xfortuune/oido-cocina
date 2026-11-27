@@ -24,6 +24,8 @@ export interface ProfileStats {
   contestsWon: number;
   holidays: number;
   snowDays: number;
+  /** Versus ganados. */
+  versusWins: number;
 }
 
 export interface Profile {
@@ -64,6 +66,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'concurso', name: 'Campeones', description: 'Gana un concurso de cocina.', progress: at('contestsWon', 1) },
   { id: 'festivo', name: 'Día de fiesta', description: 'Trabaja en un festivo.', progress: at('holidays', 1) },
   { id: 'nieve', name: 'Ni la nieve nos para', description: 'Abre el restaurante un día de nieve.', progress: at('snowDays', 1) },
+  { id: 'versus', name: 'Duelo de cocinas', description: 'Gana una partida de versus.', progress: at('versusWins', 1) },
+  { id: 'versus10', name: 'Rey del barrio', description: 'Gana 10 partidas de versus.', progress: at('versusWins', 10) },
   { id: 'quemado', name: 'Huele a chamusquina', description: 'Quema 25 cosas. Pasa en las mejores cocinas.', progress: at('burnt', 25) },
 ];
 
@@ -87,6 +91,7 @@ export function newProfile(name: string, avatar: string | null = null): Profile 
       contestsWon: 0,
       holidays: 0,
       snowDays: 0,
+      versusWins: 0,
     },
     achievements: {},
     since: new Date().toISOString(),
@@ -112,6 +117,7 @@ export interface RoundRecord {
   contestWon?: boolean;
   holiday?: boolean;
   snow?: boolean;
+  versusWin?: boolean;
 }
 
 /** Apunta la ronda y devuelve los logros recién conseguidos. */
@@ -132,6 +138,7 @@ export function recordRound(p: Profile, r: RoundRecord): Achievement[] {
   if (r.contestWon) s.contestsWon++;
   if (r.holiday) s.holidays++;
   if (r.snow) s.snowDays++;
+  if (r.versusWin) s.versusWins++;
   const fresh: Achievement[] = [];
   for (const a of ACHIEVEMENTS) {
     if (p.achievements[a.id]) continue;

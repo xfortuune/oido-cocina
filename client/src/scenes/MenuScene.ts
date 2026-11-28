@@ -1,13 +1,12 @@
 import Phaser from 'phaser';
 import { getRecipe } from '@hora-punta/shared';
-import { isTouchDevice } from '../layout';
 import { audio } from '../audio';
 import { net, savedLook } from '../net';
 import { menuPresence } from '../presence';
 import { addSoundToggle } from '../ui/SoundToggle';
 import { fillStack } from '../pixel/items';
 import { chefKey, generateTextures } from '../pixel/sprites';
-import { clamp, COLORS, drawBackground, pixelPanel, txt } from '../theme';
+import { clamp, COLORS, drawBackground, txt } from '../theme';
 import { Button } from '../ui/Button';
 
 export class MenuScene extends Phaser.Scene {
@@ -50,30 +49,8 @@ export class MenuScene extends Phaser.Scene {
     if (title.width > W - 24) title.setScale((W - 24) / title.width);
     txt(this, W / 2, heroY + 92 * s, 'en Mordiscos Mandarina', 22 * s, { color: '#fff4dc' }).setOrigin(0.5, 0);
 
-    const boxW = Math.min(W - 32, 480);
-    const touch = isTouchDevice();
-    const help = (
-      this.pickPlayers
-        ? [
-            'Desafío: 20 niveles cada vez más rápidos.',
-            'Cada 2 niveles, una habilidad; entre rondas, la tienda.',
-            'Si perdéis una ronda, vuelta al nivel 1.',
-          ]
-        : [
-            'Campaña: llevad entre amigos vuestro propio restaurante. Comprad ingredientes, poned precios y cocinad cada día.',
-            'Desafío: 20 niveles sin parar. Versus: equipo contra equipo.',
-            touch ? 'Joystick para moverte, botón naranja para la acción.' : 'WASD o flechas para moverte, Espacio para la acción.',
-          ]
-    ).join('\n');
-    const helpText = txt(this, W / 2, heroY + 140 * s, help, clamp(17 * s, 13, 20), {
-      wordWrap: { width: boxW - 32 },
-      lineSpacing: 6,
-    }).setOrigin(0.5, 0);
-    const g = this.add.graphics();
-    pixelPanel(g, W / 2 - boxW / 2, helpText.y - 14, boxW, helpText.height + 28);
-    helpText.setDepth(1);
-
-    let y = helpText.y + helpText.height + 30;
+    // Debajo del logo, directamente los botones.
+    let y = heroY + 150 * s;
     const gap = 10;
     const cols = W >= 640 ? 4 : 2;
     const bh = 60 * s;
